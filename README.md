@@ -22,7 +22,7 @@
 
 ### Windows 成品包
 
-从 GitHub Releases 下载“可直接使用版”并解压，确认电脑已安装 [Node.js](https://nodejs.org/) 后，双击 `启动PC端简易装修.bat`。浏览器会自动打开 `http://127.0.0.1:47317/`。
+从 GitHub Releases 下载 `Source code (zip)` 并解压，确认电脑已安装 [Node.js](https://nodejs.org/) 后，双击 `启动PC端简易装修.bat`。浏览器会自动打开 `http://127.0.0.1:47317/`。
 
 关闭启动窗口即可停止本地服务。重新打开同一地址时，浏览器中的存储槽和草稿会自动恢复。
 
