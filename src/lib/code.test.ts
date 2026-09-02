@@ -60,9 +60,6 @@ describe('store code', () => {
     expect(taobao).toContain('data-title="热区工坊(淘宝版)"')
     expect(taobao).not.toContain('sn-simple-logo')
 
-    const basic = generateStoreCode([image], { platform: 'taobao750' })
-    expect(basic).toContain('width:750px')
-    expect(basic).toContain('left:-585px') // -(1920-750)/2
   })
 
   it('emits an image map and reads it back', () => {

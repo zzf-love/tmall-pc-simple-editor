@@ -8,7 +8,10 @@
 // 因此本文件提供两套导出格式，由使用者按自己后台的实际表现选择，
 // 而不是替他赌一个未经验证的结构。
 
-export type PlatformId = 'tmall990' | 'taobao950' | 'taobao750'
+// 淘宝基础版（190+750 两栏）已移除：其现存状态无法证实，且 750 那一栏不在
+// 页面中心，用 -(1920-750)/2 会居中到栏而不是页面，通栏必然偏移。
+// 若日后确认仍在使用，需要按 190+750 的实际布局单独推导偏移，而不是套用公式。
+export type PlatformId = 'tmall990' | 'taobao950'
 export type CodeFormat = 'layer' | 'imagemap'
 export type ProjectKind = 'page' | 'sign'
 
@@ -36,34 +39,29 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
   },
   taobao950: {
     id: 'taobao950',
-    label: '淘宝 专业/智能版 · 950',
+    label: '淘宝 · 950',
     width: 950,
     systemClass: 'footer-more-trigger',
     title: '热区工坊(淘宝版)',
     setupHint: '后台「布局管理」先添加 950 布局，再拖入「自定义内容区」。',
   },
-  taobao750: {
-    id: 'taobao750',
-    label: '淘宝 基础版 · 750',
-    width: 750,
-    systemClass: 'footer-more-trigger',
-    title: '热区工坊(淘宝基础版)',
-    setupHint: '后台使用 190+750 布局，代码放右栏「自定义内容区」。',
-  },
 }
 
 export const PLATFORM_LIST = Object.values(PLATFORMS)
 
-export const CODE_FORMATS: { id: CodeFormat; label: string; hint: string }[] = [
+// 标签按"用户看到的效果"来写，不用实现名词——装修的人不关心 div 还是 usemap。
+export const CODE_FORMATS: { id: CodeFormat; label: string; sub: string; hint: string }[] = [
   {
     id: 'layer',
-    label: '定位图层',
-    hint: '绝对定位 div + a 覆盖层。支持整图通栏（1920），热点可任意重叠。',
+    label: '全屏通栏',
+    sub: '图片铺满屏幕宽度',
+    hint: '图片按 1920 整幅输出，左右两侧不留白，视觉冲击最强。热点可以随意重叠。适合首页大海报。',
   },
   {
     id: 'imagemap',
-    label: '图片热区',
-    hint: 'img usemap + map/area。结构最短、兼容性最好，但不做通栏突破。',
+    label: '居中显示',
+    sub: '图片按模块宽度',
+    hint: '图片按模块宽度居中显示，两侧留白。代码最短、最不容易出问题，和大多数现成装修的结构一致。',
   },
 ]
 

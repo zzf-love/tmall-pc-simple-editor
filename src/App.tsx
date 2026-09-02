@@ -769,44 +769,56 @@ function App() {
         }
       >
         <div className="export-options">
-          <label>
-            <span>项目类型</span>
-            <select value={projectKind} onChange={(event) => setProjectKind(event.target.value as ProjectKind)}>
-              <option value="page">页面装修（多图拼接）</option>
-              <option value="sign">店招（单图 · 固定高度）</option>
-            </select>
-          </label>
-          <label>
-            <span>平台</span>
-            <select value={platform} onChange={(event) => setPlatform(event.target.value as PlatformId)}>
+          <div className="export-field">
+            <span className="export-field__label">项目类型</span>
+            <div className="seg" role="group" aria-label="项目类型">
+              <button type="button" className={projectKind === 'page' ? 'on' : ''} aria-pressed={projectKind === 'page'} onClick={() => setProjectKind('page')}>
+                页面装修<em>多图拼接</em>
+              </button>
+              <button type="button" className={projectKind === 'sign' ? 'on' : ''} aria-pressed={projectKind === 'sign'} onClick={() => setProjectKind('sign')}>
+                店招<em>单图 · 固定高度</em>
+              </button>
+            </div>
+          </div>
+
+          <div className="export-field">
+            <span className="export-field__label">平台</span>
+            <div className="seg" role="group" aria-label="平台">
               {PLATFORM_LIST.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
+                <button key={item.id} type="button" className={platform === item.id ? 'on' : ''} aria-pressed={platform === item.id} onClick={() => setPlatform(item.id)}>
+                  {item.label.split(' · ')[0]}<em>{item.width} px 模块</em>
+                </button>
               ))}
-            </select>
-            <small>
-              数字是后台模块的宽度，用来算通栏居中偏移（如 990 → -465）。
-              图片仍按 1920 全屏输出，不受这个数字限制。
-            </small>
-          </label>
-          <label>
-            <span>代码格式</span>
-            <select value={codeFormat} onChange={(event) => setCodeFormat(event.target.value as CodeFormat)}>
+            </div>
+          </div>
+
+          <div className="export-field">
+            <span className="export-field__label">显示方式</span>
+            <div className="seg" role="group" aria-label="显示方式">
               {CODE_FORMATS.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
+                <button key={item.id} type="button" className={codeFormat === item.id ? 'on' : ''} aria-pressed={codeFormat === item.id} onClick={() => setCodeFormat(item.id)}>
+                  {item.label}<em>{item.sub}</em>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
+
           {projectKind === 'sign' && (
-            <label>
-              <span>店招高度</span>
-              <select value={signHeight} onChange={(event) => setSignHeight(Number(event.target.value))}>
+            <div className="export-field">
+              <span className="export-field__label">店招高度</span>
+              <div className="seg" role="group" aria-label="店招高度">
                 {SIGN_HEIGHTS.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
+                  <button key={item.value} type="button" className={signHeight === item.value ? 'on' : ''} aria-pressed={signHeight === item.value} onClick={() => setSignHeight(item.value)}>
+                    {item.value} px<em>{item.value === 120 ? '仅招牌' : '招牌 + 自制导航'}</em>
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
           )}
         </div>
+        <p className="export-note">
+          平台按你的店铺类型选：天猫 990、淘宝 950，对应后台那个模块的宽度，选错图会左右偏。
+        </p>
         <p className="export-hint">
           {CODE_FORMATS.find((item) => item.id === codeFormat)?.hint}
           {projectKind === 'sign' && ' 店招代码粘到「店铺招牌 → 自定义招牌 → 源码」。'}
