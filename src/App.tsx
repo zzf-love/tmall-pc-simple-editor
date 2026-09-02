@@ -783,7 +783,10 @@ function App() {
                 <option key={item.id} value={item.id}>{item.label}</option>
               ))}
             </select>
-            <small>数字是后台自定义内容区的宽度，要和「布局管理」里添加的布局一致</small>
+            <small>
+              数字是后台模块的宽度，用来算通栏居中偏移（如 990 → -465）。
+              图片仍按 1920 全屏输出，不受这个数字限制。
+            </small>
           </label>
           <label>
             <span>代码格式</span>

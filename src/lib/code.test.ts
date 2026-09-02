@@ -90,6 +90,24 @@ describe('store code', () => {
     expect(imported[0].hotspots[0]).toMatchObject({ x: 138, y: 92, width: 64, height: 57 })
   })
 
+  it('parses a real-world layer-format page from a live shop', () => {
+    // 现网天猫页面装修（小语言店铺装修工具生成）：990 模块内 1920 通栏 + 6 热点。
+    // 注意它没有写 position:absolute —— 依赖 jgabs 类提供定位。
+    const live = `<div style="height:2188px;" class="jg_tools_code xx_diy_code" data-title="小语言店铺装修工具"><div class="sn-simple-logo jgabs" style="background:none;border:0;padding:0;margin:0;z-index:20;width:990px;height:2188px;top:auto;left:auto;line-height:normal;"><div class="sn-simple-logo jgabs" style="background:none;border:0;padding:0;margin:0;width:1920px;height:2188px;top:auto;left:-465px;"><div style="height:2188px;width:1920px;position:relative;background:transparent url(//gdp.alicdn.com/imgextra/i1/x.jpg) no-repeat center center scroll;overflow:hidden;" data-w="mk"><div class="l__6_314418 sn-simple-logo jgabs" data-w="area" style="left:1018px;top:1890px;width:487px;height:264px;z-index:6;"><a href="//detail.tmall.com/item.htm?id=1056997314246" target="_blank" style="display:block;height:100%;"></a></div><div class="l__1_314418 sn-simple-logo jgabs" data-w="area" style="left:390px;top:713px;width:376px;height:283px;z-index:1;"><a href="//tbshop.m.taobao.com/app/z.html" target="_blank" style="display:block;height:100%;"></a></div></div></div></div></div>`
+    const imported = importStoreCode(live)
+    expect(imported).toHaveLength(1)
+    expect(imported[0].width).toBe(1920)
+    expect(imported[0].height).toBe(2188)
+    expect(imported[0].hotspots).toHaveLength(2)
+    expect(imported[0].hotspots[0]).toMatchObject({
+      x: 1018,
+      y: 1890,
+      width: 487,
+      height: 264,
+      href: '//detail.tmall.com/item.htm?id=1056997314246',
+    })
+  })
+
   it('generates a fixed-height sign for both formats', () => {
     const map = generateSignCode(image, 150, { platform: 'tmall990', format: 'imagemap' })
     expect(map).toContain('width:990px;height:150px')
