@@ -547,10 +547,23 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-group">
-          {/* 版本徽标跟随当前所选平台，避免支持了淘宝却还挂着「天猫版」 */}
-          <div className="brand-mark" aria-label={`热区工坊 HotZone Studio · ${PLATFORMS[platform].label}`}>
+          <div className="brand-mark" aria-label="热区工坊 HotZone Studio">
             <span className="brand-mark__name">热区工坊</span>
-            <span className="brand-mark__edition">{PLATFORMS[platform].label}</span>
+          </div>
+          {/* 平台开关就放在这儿：原来只显示不能改，状态和控件不在一处，很别扭。 */}
+          <div className="platform-switch" role="group" aria-label="选择平台">
+            {PLATFORM_LIST.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={platform === item.id ? 'on' : ''}
+                aria-pressed={platform === item.id}
+                title={`${item.label}：后台模块宽度 ${item.width}px`}
+                onClick={() => setPlatform(item.id)}
+              >
+                {item.label.split(' · ')[0]}
+              </button>
+            ))}
           </div>
           <div className="header-separator" />
           <label className="document-name">

@@ -132,14 +132,32 @@ a:focus-visible {
   letter-spacing: -0.7px;
 }
 
-.brand-mark__edition {
-  padding: 4px 6px;
-  color: #fff;
-  background: #ea4d2d;
+/* 平台开关：显示当前平台，同时就地可切换 */
+.platform-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: #f1f0ea;
+  border-radius: 7px;
+}
+.platform-switch button {
+  border: 0;
+  background: transparent;
   border-radius: 5px;
-  font-size: 9px;
-  font-weight: 720;
-  letter-spacing: 0;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.platform-switch button:hover { color: #1a1b1c; }
+.platform-switch button.on {
+  background: #fff;
+  color: #1a1b1c;
+  box-shadow: 0 1px 2px rgba(20,20,20,.10);
 }
 
 .header-separator {
@@ -1845,9 +1863,9 @@ a:focus-visible {
     letter-spacing: -0.5px;
   }
 
-  .brand-mark__edition {
-    padding: 3px 4px;
-    font-size: 8px;
+  .platform-switch button {
+    padding: 3px 7px;
+    font-size: 10.5px;
   }
 
   .workspace {
