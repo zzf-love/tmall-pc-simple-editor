@@ -1940,3 +1940,8 @@ a:focus-visible {
 }
 .export-extra summary { cursor: pointer; font-size: 13px; font-weight: 600; }
 .export-extra p { margin: 8px 0; font-size: 12.5px; color: var(--text-muted, #6b7280); }
+.export-options label small {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted, #9ca3af);
+}

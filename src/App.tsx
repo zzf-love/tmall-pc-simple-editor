@@ -783,6 +783,7 @@ function App() {
                 <option key={item.id} value={item.id}>{item.label}</option>
               ))}
             </select>
+            <small>数字是后台自定义内容区的宽度，要和「布局管理」里添加的布局一致</small>
           </label>
           <label>
             <span>代码格式</span>
