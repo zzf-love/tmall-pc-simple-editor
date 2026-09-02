@@ -55,7 +55,7 @@ const server = createServer(async (request, response) => {
 
 server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
-    console.log(`PC端简易装修(天猫版)已经在运行：${url}`)
+    console.log(`热区工坊(天猫版)已经在运行：${url}`)
     openBrowser()
     process.exit(0)
   }
@@ -64,7 +64,7 @@ server.on('error', (error) => {
 
 server.listen(port, '127.0.0.1', () => {
   console.log('')
-  console.log(`  PC端简易装修(天猫版)已启动：${url}`)
+  console.log(`  热区工坊(天猫版)已启动：${url}`)
   console.log('  关闭此窗口即可停止；项目内容会自动保存在浏览器中。')
   console.log('')
   openBrowser()

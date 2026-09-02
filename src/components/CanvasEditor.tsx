@@ -313,8 +313,19 @@ export function CanvasEditor({
                         </div>
                       )
                     })}
+                    {/* 显式映射到 left/top：rectangle 的 x/y 直接当 style 传下去，
+                        React 会输出 CSS 的 x/y（SVG 几何属性），对 div 无效，
+                        框选时预览框会卡在容器左上角而不是跟着鼠标。 */}
                     {drawing?.imageId === image.id && (
-                      <div className="hotspot hotspot--drawing" style={drawing.rectangle}>
+                      <div
+                        className="hotspot hotspot--drawing"
+                        style={{
+                          left: drawing.rectangle.x,
+                          top: drawing.rectangle.y,
+                          width: drawing.rectangle.width,
+                          height: drawing.rectangle.height,
+                        }}
+                      >
                         <span className="hotspot__measure">
                           {Math.round(drawing.rectangle.width)} × {Math.round(drawing.rectangle.height)}
                         </span>

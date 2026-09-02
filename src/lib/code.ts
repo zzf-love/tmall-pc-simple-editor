@@ -24,7 +24,7 @@ export function generateStoreCode(images: ImageAsset[]) {
     })
     .join('')
 
-  return `<div style="height:${totalHeight}px;" class="jg_tools_code xx_diy_code" data-title="PC端简易装修(天猫版)"><div class="sn-simple-logo jgabs" style="position:absolute;background:none;border:0;padding:0;margin:0;z-index:20;width:990px;height:${totalHeight}px;top:auto;left:auto;line-height:normal;"><div class="sn-simple-logo jgabs" style="position:absolute;background:none;border:0;padding:0;margin:0;width:${CANVAS_WIDTH}px;height:${totalHeight}px;top:auto;left:${left}px;">${sections}</div></div></div>`
+  return `<div style="height:${totalHeight}px;" class="jg_tools_code xx_diy_code" data-title="热区工坊(天猫版)"><div class="sn-simple-logo jgabs" style="position:absolute;background:none;border:0;padding:0;margin:0;z-index:20;width:990px;height:${totalHeight}px;top:auto;left:auto;line-height:normal;"><div class="sn-simple-logo jgabs" style="position:absolute;background:none;border:0;padding:0;margin:0;width:${CANVAS_WIDTH}px;height:${totalHeight}px;top:auto;left:${left}px;">${sections}</div></div></div>`
 }
 
 const px = (style: CSSStyleDeclaration, property: keyof CSSStyleDeclaration) => {

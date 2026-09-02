@@ -29,7 +29,7 @@ describe('store code', () => {
     expect(code).toContain('font-size:0')
     expect(code).toContain('height:1249px')
     expect(code.startsWith('<div style="height:1249px;" class="jg_tools_code xx_diy_code"')).toBe(true)
-    expect(code).toContain('data-title="PC端简易装修(天猫版)"')
+    expect(code).toContain('data-title="热区工坊(天猫版)"')
     expect(code.match(/data-w="mk"/g)).toHaveLength(2)
     expect(code.match(/data-w="area"/g)).toHaveLength(2)
     expect(code).toContain('top:auto;left:auto;line-height:normal')

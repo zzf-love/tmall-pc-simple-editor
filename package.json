@@ -1,7 +1,7 @@
 {
   "name": "tmall-pc-simple-editor",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "一款本地运行的天猫/淘宝 PC 店铺图片热点装修工具",
   "license": "MIT",
   "type": "module",

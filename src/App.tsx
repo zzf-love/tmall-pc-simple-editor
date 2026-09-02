@@ -534,8 +534,8 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-group">
-          <div className="brand-mark" aria-label="PC端简易装修(天猫版)">
-            <span className="brand-mark__name">PC端简易装修</span>
+          <div className="brand-mark" aria-label="热区工坊 HotZone Studio（天猫版）">
+            <span className="brand-mark__name">热区工坊</span>
             <span className="brand-mark__edition">天猫版</span>
           </div>
           <div className="header-separator" />
