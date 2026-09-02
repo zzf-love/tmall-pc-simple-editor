@@ -22,7 +22,9 @@ import { Inspector } from './components/Inspector'
 import { Modal } from './components/Modal'
 import { ProjectSlots } from './components/ProjectSlots'
 import { useImageHistory } from './hooks/useImageHistory'
-import { generateStoreCode, importStoreCode } from './lib/code'
+import { generateSignCode, generateStoreCode, importStoreCode, HIDE_NAV_CSS } from './lib/code'
+import type { CodeFormat, PlatformId, ProjectKind } from './lib/platform'
+import { CODE_FORMATS, PLATFORMS, PLATFORM_LIST, SIGN_HEIGHTS } from './lib/platform'
 import {
   CANVAS_WIDTH,
   clampHotspot,
@@ -161,7 +163,18 @@ function App() {
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
   const projectInput = useRef<HTMLInputElement>(null)
-  const generatedCode = useMemo(() => generateStoreCode(images), [images])
+  const [platform, setPlatform] = useState<PlatformId>('tmall990')
+  const [codeFormat, setCodeFormat] = useState<CodeFormat>('layer')
+  const [projectKind, setProjectKind] = useState<ProjectKind>('page')
+  const [signHeight, setSignHeight] = useState<number>(150)
+
+  const generatedCode = useMemo(
+    () =>
+      projectKind === 'sign'
+        ? generateSignCode(images[0], signHeight, { platform, format: codeFormat })
+        : generateStoreCode(images, { platform, format: codeFormat }),
+    [images, projectKind, signHeight, platform, codeFormat],
+  )
   const totalHotspots = images.reduce((sum, image) => sum + image.hotspots.length, 0)
 
   const selectedImage = images.find((image) => image.id === selectedImageId) || null
@@ -534,9 +547,10 @@ function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="brand-group">
-          <div className="brand-mark" aria-label="热区工坊 HotZone Studio（天猫版）">
+          {/* 版本徽标跟随当前所选平台，避免支持了淘宝却还挂着「天猫版」 */}
+          <div className="brand-mark" aria-label={`热区工坊 HotZone Studio · ${PLATFORMS[platform].label}`}>
             <span className="brand-mark__name">热区工坊</span>
-            <span className="brand-mark__edition">天猫版</span>
+            <span className="brand-mark__edition">{PLATFORMS[platform].label}</span>
           </div>
           <div className="header-separator" />
           <label className="document-name">
@@ -732,12 +746,16 @@ function App() {
       <Modal
         open={codeOpen}
         title="装修代码已生成"
-        description={`共 ${images.length} 张图片、${totalHotspots} 个热点，已按 0 px 间隙拼接。`}
+        description={
+          projectKind === 'sign'
+            ? `店招单图 · ${PLATFORMS[platform].width}×${signHeight}，${images[0]?.hotspots.length ?? 0} 个热点。`
+            : `共 ${images.length} 张图片、${totalHotspots} 个热点，已按 0 px 间隙拼接。`
+        }
         wide
         onClose={() => setCodeOpen(false)}
         footer={
           <>
-            <span className="code-safety"><Check size={14} /> 天猫兼容结构 · 已写入 0 px 拼接样式</span>
+            <span className="code-safety"><Check size={14} /> {PLATFORMS[platform].setupHint}</span>
             <div className="footer-spacer" />
             <button className="secondary-button" type="button" onClick={() => downloadText(`${safeFileName(documentName)}.html`, generatedCode, 'text/html;charset=utf-8')}>
               <Download size={16} />
@@ -750,7 +768,53 @@ function App() {
           </>
         }
       >
-        <textarea className="generated-code" rows={17} readOnly value={generatedCode} onFocus={(event) => event.currentTarget.select()} />
+        <div className="export-options">
+          <label>
+            <span>项目类型</span>
+            <select value={projectKind} onChange={(event) => setProjectKind(event.target.value as ProjectKind)}>
+              <option value="page">页面装修（多图拼接）</option>
+              <option value="sign">店招（单图 · 固定高度）</option>
+            </select>
+          </label>
+          <label>
+            <span>平台</span>
+            <select value={platform} onChange={(event) => setPlatform(event.target.value as PlatformId)}>
+              {PLATFORM_LIST.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>代码格式</span>
+            <select value={codeFormat} onChange={(event) => setCodeFormat(event.target.value as CodeFormat)}>
+              {CODE_FORMATS.map((item) => (
+                <option key={item.id} value={item.id}>{item.label}</option>
+              ))}
+            </select>
+          </label>
+          {projectKind === 'sign' && (
+            <label>
+              <span>店招高度</span>
+              <select value={signHeight} onChange={(event) => setSignHeight(Number(event.target.value))}>
+                {SIGN_HEIGHTS.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        <p className="export-hint">
+          {CODE_FORMATS.find((item) => item.id === codeFormat)?.hint}
+          {projectKind === 'sign' && ' 店招代码粘到「店铺招牌 → 自定义招牌 → 源码」。'}
+        </p>
+        <textarea className="generated-code" rows={projectKind === 'sign' ? 12 : 17} readOnly value={generatedCode} onFocus={(event) => event.currentTarget.select()} />
+        {projectKind === 'sign' && signHeight === 150 && (
+          <details className="export-extra">
+            <summary>自制导航需要隐藏系统导航（点开复制 CSS）</summary>
+            <p>粘到「系统导航 → 显示设置」的 CSS 框里。注意：店招图片代码不要粘进这个框。</p>
+            <textarea className="generated-code" rows={3} readOnly value={HIDE_NAV_CSS} onFocus={(event) => event.currentTarget.select()} />
+          </details>
+        )}
       </Modal>
 
       <Modal open={helpOpen} title="三步完成店铺页面" onClose={() => setHelpOpen(false)}>
