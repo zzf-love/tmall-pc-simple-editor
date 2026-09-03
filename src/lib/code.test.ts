@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
-import { generateSignCode, generateStoreCode, importStoreCode } from './code'
+import { describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
+import { generateSignCode, generateStoreCode, importStoreCode, importStoreCodeAsync } from './code'
+import { loadImageDimensions } from './editor'
 import type { ImageAsset } from '../types'
+
+// 只替换联网取尺寸的函数，其余（uid/CANVAS_WIDTH）保持真实实现
+vi.mock('./editor', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./editor')>()),
+  loadImageDimensions: vi.fn(),
+}))
 
 const image: ImageAsset = {
   id: 'image-1',
@@ -23,6 +31,26 @@ const image: ImageAsset = {
   ],
 }
 
+const sign: ImageAsset = {
+  id: 'sign-1',
+  name: '店招.jpg',
+  url: 'https://img.example.com/sign.jpg',
+  width: 1920,
+  height: 150,
+  hotspots: [
+    {
+      id: 'sign-h1',
+      label: '热点 01',
+      x: 100,
+      y: 30,
+      width: 200,
+      height: 90,
+      href: 'https://a.example.com',
+      target: '_blank',
+    },
+  ],
+}
+
 describe('store code', () => {
   it('generates zero-gap code and round-trips its editable fields', () => {
     const code = generateStoreCode([image, { ...image, id: 'image-2', height: 600 }])
@@ -35,6 +63,8 @@ describe('store code', () => {
     expect(code).toContain('top:auto;left:auto;line-height:normal')
     expect(code).toContain(`background:transparent url(${image.url.replaceAll('&', '&amp;')})`)
     expect(code).not.toContain('data-putu-')
+    // 热点层不应再出现重复的 left:auto/width:auto 后又被覆盖的脏属性
+    expect(code).not.toContain('left:auto;top:auto;right:auto')
     const imported = importStoreCode(code)
     expect(imported).toHaveLength(2)
     expect(imported[0].url).toBe(image.url)
@@ -60,24 +90,35 @@ describe('store code', () => {
     expect(taobao).toContain('data-title="热区工坊(淘宝版)"')
     expect(taobao).not.toContain('sn-simple-logo')
 
+    // 基础版：750 模块在 190+10+750 布局右栏，模块中心比屏幕中心右偏 100px，
+    // 全屏居中偏移必须是 -685 而不是 -(1920-750)/2=-585（那只会居中到栏）。
+    const basic = generateStoreCode([image], { platform: 'taobao750' })
+    expect(basic).toContain('width:750px')
+    expect(basic).toContain('left:-685px')
+    expect(basic).not.toContain('left:-585px')
+    expect(basic).toContain('footer-more-trigger')
+    expect(basic).toContain('data-title="热区工坊(淘宝基础版)"')
   })
 
-  it('emits an image map and reads it back', () => {
+  it('emits an image map and reads it back into original pixel space', () => {
     const code = generateStoreCode([image], { platform: 'tmall990', format: 'imagemap' })
     expect(code).toContain('usemap="#')
     expect(code).toContain('<map name="')
     // 1920 原图缩到 990：坐标同比 × (990/1920)
     expect(code).toContain('coords="454,34,837,329"')
+    expect(code).toContain('data-ow="1920"')
     expect(code).not.toContain('background:transparent url')
 
     const imported = importStoreCode(code)
     expect(imported).toHaveLength(1)
     expect(imported[0].url).toBe(image.url)
-    expect(imported[0].hotspots[0]).toMatchObject({ x: 454, y: 34, href: image.hotspots[0].href })
+    // 借助 data-ow 还原回 1920 原图像素空间，再切通栏导出才不会错位
+    expect(imported[0].width).toBe(1920)
+    expect(imported[0].hotspots[0]).toMatchObject({ x: 880, y: 66, width: 743, href: image.hotspots[0].href })
   })
 
-  it('parses a real-world image map from a live shop sign', () => {
-    // 现网天猫店招（990×150，img usemap + map/area），验证外部结构可导入
+  it('parses a real-world image map from a live shop sign without original-size hints', () => {
+    // 现网天猫店招（990×150，img usemap + map/area），无 data-ow，按其自身尺寸空间导入
     const live = `<div class="J_TWidget maGong" style="height:150px;margin:0 auto;">
       <img src="//gdp.alicdn.com/x.jpg" width="990" height="150" usemap="#IPNQC" />
       <map name="IPNQC"><area coords="138,92,202,149" href="//kinder.tmall.com/search.htm" target="_blank" /></map></div>`
@@ -89,7 +130,6 @@ describe('store code', () => {
 
   it('parses a real-world layer-format page from a live shop', () => {
     // 现网天猫页面装修（小语言店铺装修工具生成）：990 模块内 1920 通栏 + 6 热点。
-    // 注意它没有写 position:absolute —— 依赖 jgabs 类提供定位。
     const live = `<div style="height:2188px;" class="jg_tools_code xx_diy_code" data-title="小语言店铺装修工具"><div class="sn-simple-logo jgabs" style="background:none;border:0;padding:0;margin:0;z-index:20;width:990px;height:2188px;top:auto;left:auto;line-height:normal;"><div class="sn-simple-logo jgabs" style="background:none;border:0;padding:0;margin:0;width:1920px;height:2188px;top:auto;left:-465px;"><div style="height:2188px;width:1920px;position:relative;background:transparent url(//gdp.alicdn.com/imgextra/i1/x.jpg) no-repeat center center scroll;overflow:hidden;" data-w="mk"><div class="l__6_314418 sn-simple-logo jgabs" data-w="area" style="left:1018px;top:1890px;width:487px;height:264px;z-index:6;"><a href="//detail.tmall.com/item.htm?id=1056997314246" target="_blank" style="display:block;height:100%;"></a></div><div class="l__1_314418 sn-simple-logo jgabs" data-w="area" style="left:390px;top:713px;width:376px;height:283px;z-index:1;"><a href="//tbshop.m.taobao.com/app/z.html" target="_blank" style="display:block;height:100%;"></a></div></div></div></div></div>`
     const imported = importStoreCode(live)
     expect(imported).toHaveLength(1)
@@ -104,16 +144,140 @@ describe('store code', () => {
       href: '//detail.tmall.com/item.htm?id=1056997314246',
     })
   })
+})
 
+describe('sign code', () => {
   it('generates a fixed-height sign for both formats', () => {
-    const map = generateSignCode(image, 150, { platform: 'tmall990', format: 'imagemap' })
+    const map = generateSignCode(sign, 150, { platform: 'tmall990', format: 'imagemap' })
     expect(map).toContain('width:990px;height:150px')
     expect(map).toContain('usemap="#')
 
-    const layer = generateSignCode(image, 120, { platform: 'taobao950', format: 'layer' })
+    const layer = generateSignCode(sign, 120, { platform: 'taobao950', format: 'layer' })
     expect(layer).toContain('width:950px;height:120px')
     expect(layer).toContain('data-w="area"')
     expect(generateSignCode(undefined, 150)).toBe('')
   })
+
+  it('sign layer is a real 1920 breakthrough, not a scaled module box', () => {
+    const tmall = generateSignCode(sign, 150, { platform: 'tmall990', format: 'layer' })
+    // 必须有通栏突破结构：990 模块层 + 1920 层 + -465 偏移
+    expect(tmall).toContain('width:1920px;height:150px')
+    expect(tmall).toContain('left:-465px')
+    // 热点用原图像素坐标，不做缩放
+    expect(tmall).toContain('left:100px;top:30px;width:200px;height:90px')
+
+    const taobao = generateSignCode(sign, 150, { platform: 'taobao950', format: 'layer' })
+    expect(taobao).toContain('left:-485px')
+
+    // 基础版店招仍是 950 宽（页头不随 750 右栏走），偏移按 950 居中 = -485
+    const basicLayer = generateSignCode(sign, 150, { platform: 'taobao750', format: 'layer' })
+    expect(basicLayer).toContain('width:950px;height:150px')
+    expect(basicLayer).toContain('left:-485px')
+    expect(basicLayer).not.toContain('width:750px')
+    // 基础版店招居中图片同样按 950 宽缩放（1920×150 → 950×74）
+    const basicMap = generateSignCode(sign, 150, { platform: 'taobao750', format: 'imagemap' })
+    expect(basicMap).toContain('width:950px;height:150px')
+    expect(basicMap).toContain('width="950" height="74"')
+  })
+
+  it('shifts layer hotspots with the centered background when the image is not 1920 wide', () => {
+    // 990 宽的图放进 1920 通栏容器：背景 center center 会左右各留白 (1920-990)/2 = 465。
+    // 热点坐标是原图像素，必须跟着平移，否则整组热点偏出模块 465px，线上完全点不到。
+    const narrow: ImageAsset = { ...sign, width: 990, height: 150 }
+    const code = generateSignCode(narrow, 150, { platform: 'tmall990', format: 'layer' })
+    expect(code).toContain('left:565px;top:30px;width:200px;height:90px')
+
+    // 1920 原图不受影响，偏移量为 0
+    const full = generateSignCode(sign, 150, { platform: 'tmall990', format: 'layer' })
+    expect(full).toContain('left:100px;top:30px;width:200px;height:90px')
+  })
+
+  it('shifts layer hotspots vertically when the sign image is taller than the fixed height', () => {
+    // 200 高的图裁进 150 的店招：上下各裁 (150-200)/2 = -25，热点 y 同步上移 25
+    const tall: ImageAsset = { ...sign, width: 1920, height: 200 }
+    const code = generateSignCode(tall, 150, { platform: 'tmall990', format: 'layer' })
+    expect(code).toContain('left:100px;top:5px;width:200px;height:90px')
+  })
+
+  it('sign imagemap keeps aspect ratio instead of stretching the image', () => {
+    // 1920×150 缩到 990 宽，等比高 ≈ 77，而不是被拉成 150
+    const code = generateSignCode(sign, 150, { platform: 'tmall990', format: 'imagemap' })
+    expect(code).toContain('width="990" height="77"')
+    expect(code).toContain('data-ow="1920" data-oh="150"')
+  })
+
+  it('round-trips both sign formats back into editable data', () => {
+    const layer = generateSignCode(sign, 150, { platform: 'tmall990', format: 'layer' })
+    const fromLayer = importStoreCode(layer)
+    expect(fromLayer).toHaveLength(1)
+    expect(fromLayer[0].width).toBe(1920)
+    expect(fromLayer[0].hotspots[0]).toMatchObject({ x: 100, y: 30, width: 200, height: 90 })
+
+    const map = generateSignCode(sign, 150, { platform: 'tmall990', format: 'imagemap' })
+    const fromMap = importStoreCode(map)
+    expect(fromMap).toHaveLength(1)
+    expect(fromMap[0].width).toBe(1920)
+    // 缩放成整数 coords 再还原会有 ±1px 取整误差，属于正常范围
+    const h = fromMap[0].hotspots[0]
+    expect(Math.abs(h.x - 100)).toBeLessThanOrEqual(1)
+    expect(Math.abs(h.y - 30)).toBeLessThanOrEqual(1)
+    expect(Math.abs(h.width - 200)).toBeLessThanOrEqual(1)
+    expect(Math.abs(h.height - 90)).toBeLessThanOrEqual(1)
+  })
+
+  it('imports the previous buggy sign-layer output (img + overlay hotspots)', () => {
+    // 旧版本店招 layer：990 容器里放缩放过的 img 和 data-w=area 热点层
+    const legacy = `<div class="hotzone-sign" style="width:990px;height:150px;position:relative;">
+      <img src="//gdp.alicdn.com/s.jpg" width="990" height="150" />
+      <div class="putu-sign-1 sn-simple-logo jgabs" data-w="area" style="position:absolute;left:52px;top:15px;width:103px;height:46px;"><a href="//a.com" target="_blank"></a></div>
+    </div>`
+    const imported = importStoreCode(legacy)
+    expect(imported).toHaveLength(1)
+    expect(imported[0].width).toBe(990)
+    expect(imported[0].hotspots[0]).toMatchObject({ x: 52, y: 15, width: 103, height: 46 })
+  })
+
+  it('imports a hotspot-less centered image instead of throwing', () => {
+    const plain = '<div class="hotzone-sign" style="width:990px;"><img src="//gdp.alicdn.com/plain.jpg" width="990" height="77" data-ow="1920" data-oh="150" /></div>'
+    const imported = importStoreCode(plain)
+    expect(imported).toHaveLength(1)
+    expect(imported[0]).toMatchObject({ width: 1920, height: 150, hotspots: [] })
+  })
 })
 
+describe('import external code whose img carries no dimensions', () => {
+  it('sync import falls back and keeps area coords untouched', () => {
+    const code = '<div><img src="//cdn/x.jpg" usemap="#m" /><map name="m"><area coords="10,20,110,170" href="//a.com" /></map></div>'
+    const imported = importStoreCode(code)
+    expect(imported).toHaveLength(1)
+    expect(imported[0]).toMatchObject({ width: 1920, height: 0 })
+    expect(imported[0].hotspots[0]).toMatchObject({ x: 10, y: 20, width: 100, height: 150 })
+  })
+
+  it('async import fills natural size for a dimension-less usemap img (magong export)', async () => {
+    ;(loadImageDimensions as Mock).mockResolvedValueOnce({ width: 990, height: 150 })
+    const code = '<div class="J_TWidget maGong"><img src="//gdp.alicdn.com/x.jpg" usemap="#IPNQC" /><map name="IPNQC"><area coords="138,92,202,149" href="//kinder.tmall.com" target="_blank" /></map></div>'
+    const { images, missingSize } = await importStoreCodeAsync(code)
+    expect(missingSize).toBe(0)
+    expect(images[0]).toMatchObject({ width: 990, height: 150 })
+    // 无 width 属性时 area 坐标就是原图像素，不再缩放
+    expect(images[0].hotspots[0]).toMatchObject({ x: 138, y: 92, width: 64, height: 57 })
+  })
+
+  it('async import scales declared-space coords up to natural space', async () => {
+    ;(loadImageDimensions as Mock).mockResolvedValueOnce({ width: 1920, height: 300 })
+    const code = '<div><img src="//cdn/x.jpg" width="960" height="150" usemap="#m" /><map name="m"><area coords="0,0,480,75" href="//a.com" /></map></div>'
+    const { images } = await importStoreCodeAsync(code)
+    expect(images[0].width).toBe(1920)
+    // area 写在 960 渲染空间，scale=0.5，还原回 1920 空间要 ×2
+    expect(images[0].hotspots[0]).toMatchObject({ x: 0, y: 0, width: 960, height: 150 })
+  })
+
+  it('async import keeps fallback and counts missingSize when the image cannot load', async () => {
+    ;(loadImageDimensions as Mock).mockRejectedValueOnce(new Error('network down'))
+    const code = '<div><img src="//cdn/x.jpg" usemap="#m" /><map name="m"><area coords="1,2,3,4" href="//a.com" /></map></div>'
+    const { images, missingSize } = await importStoreCodeAsync(code)
+    expect(missingSize).toBe(1)
+    expect(images[0]).toMatchObject({ width: 1920, height: 0 })
+  })
+})

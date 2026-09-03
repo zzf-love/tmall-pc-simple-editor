@@ -8,31 +8,44 @@
 // 因此本文件提供两套导出格式，由使用者按自己后台的实际表现选择，
 // 而不是替他赌一个未经验证的结构。
 
-// 淘宝基础版（190+750 两栏）已移除：其现存状态无法证实，且 750 那一栏不在
-// 页面中心，用 -(1920-750)/2 会居中到栏而不是页面，通栏必然偏移。
-// 若日后确认仍在使用，需要按 190+750 的实际布局单独推导偏移，而不是套用公式。
-export type PlatformId = 'tmall990' | 'taobao950'
+export type PlatformId = 'tmall990' | 'taobao950' | 'taobao750'
 export type CodeFormat = 'layer' | 'imagemap'
 export type ProjectKind = 'page' | 'sign'
 
 export interface PlatformConfig {
   id: PlatformId
   label: string
-  /** 后台自定义内容区的可编辑宽度 */
+  /** 顶栏开关用的短名 */
+  shortLabel: string
+  /** 后台「自定义内容区」页面模块的可编辑宽度 */
   width: number
+  /** 店招模块宽度（淘宝 C 店店招统一 950，基础版也不例外） */
+  signWidth: number
+  /**
+   * layer 通栏：1920 图层相对页面模块左边的偏移，使整图相对「屏幕」居中。
+   * - 居中模块（990/950）：-(1920-模块宽)/2
+   * - 基础版 750：模块在 190+10+750=950 布局的右栏，模块中心比屏幕中心
+   *   右偏 100px，所以是 -(1920-750)/2-100 = -685，不能套居中公式。
+   */
+  breakthroughLeft: number
   /** 突破全屏时用的系统类名（layer 格式才会用到） */
   systemClass: string
   /** 生成代码里写入的 data-title */
   title: string
-  /** 后台前置操作提示 */
+  /** 页面模块后台前置操作提示 */
   setupHint: string
+  /** 店招后台操作提示（缺省与页面相同） */
+  signSetupHint?: string
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
   tmall990: {
     id: 'tmall990',
     label: '天猫 · 990',
+    shortLabel: '天猫',
     width: 990,
+    signWidth: 990,
+    breakthroughLeft: -465,
     systemClass: 'sn-simple-logo jgabs',
     title: '热区工坊(天猫版)',
     setupHint: '后台先添加 990 布局，再把「自定义内容区」拖进去。',
@@ -40,14 +53,44 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
   taobao950: {
     id: 'taobao950',
     label: '淘宝 · 950',
+    shortLabel: '淘宝',
     width: 950,
+    signWidth: 950,
+    breakthroughLeft: -485,
     systemClass: 'footer-more-trigger',
     title: '热区工坊(淘宝版)',
     setupHint: '后台「布局管理」先添加 950 布局，再拖入「自定义内容区」。',
   },
+  taobao750: {
+    id: 'taobao750',
+    label: '基础版 · 750',
+    shortLabel: '基础版',
+    width: 750,
+    signWidth: 950,
+    breakthroughLeft: -685,
+    systemClass: 'footer-more-trigger',
+    title: '热区工坊(淘宝基础版)',
+    setupHint:
+      '基础版只有「左 190 + 右 750」一种布局：后台「布局管理」建好该布局，把「自定义内容区」拖到右侧 750 栏，代码必须粘在右侧 750 模块里，粘错栏会整体偏移。',
+    signSetupHint: '基础版店招仍是 950 宽：代码粘到「店铺招牌 → 自定义招牌 → 源码」。',
+  },
 }
 
 export const PLATFORM_LIST = Object.values(PLATFORMS)
+
+export function isPlatformId(value: unknown): value is PlatformId {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PLATFORMS, value)
+}
+
+/** 店招模块宽度 */
+export function signWidthOf(platform: PlatformId) {
+  return PLATFORMS[platform].signWidth
+}
+
+/** 店招通栏的左偏移：店招在页头是居中模块，套居中公式即可 */
+export function signBreakthroughLeft(platform: PlatformId) {
+  return -Math.round((1920 - PLATFORMS[platform].signWidth) / 2)
+}
 
 // 标签按"用户看到的效果"来写，不用实现名词——装修的人不关心 div 还是 usemap。
 export const CODE_FORMATS: { id: CodeFormat; label: string; sub: string; hint: string }[] = [

@@ -19,6 +19,8 @@ interface CanvasEditorProps {
   canUndo: boolean
   canRedo: boolean
   showHotspots: boolean
+  moduleGuide: ModuleGuide | null
+  outputLabel: string
   onModeChange: (mode: EditorMode) => void
   onZoomChange: (zoom: number) => void
   onSelectImage: (id: string) => void
@@ -35,6 +37,13 @@ interface CanvasEditorProps {
 }
 
 type Rectangle = Pick<Hotspot, 'x' | 'y' | 'width' | 'height'>
+
+/** 通栏模块在 1920 原图上的「可视窗口」位置（原图像素空间），用于画布引导线 */
+export interface ModuleGuide {
+  left: number
+  width: number
+  label: string
+}
 
 type DragState = {
   type: 'move' | 'resize'
@@ -79,6 +88,8 @@ export function CanvasEditor({
   canUndo,
   canRedo,
   showHotspots,
+  moduleGuide,
+  outputLabel,
   onModeChange,
   onZoomChange,
   onSelectImage,
@@ -94,6 +105,17 @@ export function CanvasEditor({
   const [drawing, setDrawing] = useState<{ imageId: string; rectangle: Rectangle } | null>(null)
   const totalHeight = images.reduce((sum, image) => sum + image.height, 0)
   const canvasWidth = images[0]?.width || 1920
+
+  // 模块可视区只在顶部像素条上高亮一段，不再压暗画布——盖在图上会挡住编辑。
+  // 窗口夹在画布宽度内，图比模块窄时不显示（整张图都在窗口里，没有提示价值）。
+  const rulerGuide =
+    moduleGuide && canvasWidth > moduleGuide.width
+      ? {
+          left: Math.max(0, Math.min(moduleGuide.left, canvasWidth - moduleGuide.width)),
+          width: moduleGuide.width,
+          label: moduleGuide.label,
+        }
+      : null
 
   const pointerPosition = (event: React.PointerEvent<HTMLElement>, element: HTMLElement) => {
     const rect = element.getBoundingClientRect()
@@ -231,12 +253,29 @@ export function CanvasEditor({
             <Redo2 size={17} />
           </button>
         </div>
+        <span className="canvas-target-chip" title="左上角平台开关决定导出代码的模块宽度与通栏偏移，切换后这里和图上的可视区引导线会同步变化">
+          输出目标：{outputLabel}
+        </span>
         {mode === 'draw' && <span className="drawing-hint">在图片上按住鼠标拖拽</span>}
       </div>
 
       <div className="canvas-scroll">
         <div className="canvas-stage">
           <div className="width-guide" style={{ width: canvasWidth * zoom }}>
+            {rulerGuide && (
+              <div
+                className="width-guide__window"
+                title={`${rulerGuide.label}：原图 ${rulerGuide.left} – ${rulerGuide.left + rulerGuide.width} px`}
+                style={{ left: rulerGuide.left * zoom, width: rulerGuide.width * zoom }}
+              >
+                <span className="width-guide__edge width-guide__edge--start">
+                  {rulerGuide.left}
+                </span>
+                <span className="width-guide__edge width-guide__edge--end">
+                  {rulerGuide.left + rulerGuide.width}
+                </span>
+              </div>
+            )}
             <span>0</span>
             <span>{Math.round(canvasWidth / 4)}</span>
             <span>{Math.round(canvasWidth / 2)}</span>

@@ -715,6 +715,25 @@ a:focus-visible {
   padding: 36px 42px 88px;
 }
 
+.canvas-target-chip {
+  margin-left: auto;
+  align-self: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef3ff;
+  border: 1px solid #d4e0ff;
+  color: #2f54b8;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+@media (max-width: 930px) {
+  .canvas-target-chip {
+    display: none;
+  }
+}
+
 .width-guide {
   position: relative;
   height: 34px;
@@ -752,6 +771,40 @@ a:focus-visible {
   font-size: 10px;
   font-weight: 650;
   white-space: nowrap;
+}
+
+/* 模块可视区：在顶部像素条上亮出一段，不覆盖画布，不干扰框选与拖拽。 */
+.width-guide__window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(250, 204, 21, 0.14), rgba(250, 204, 21, 0.34));
+  border-left: 1px solid #ca8a04;
+  border-right: 1px solid #ca8a04;
+  box-shadow: inset 0 -3px 0 #eab308;
+}
+
+.width-guide__edge {
+  position: absolute;
+  top: 0;
+  padding: 1px 3px;
+  border-radius: 0 0 3px 3px;
+  background: rgba(250, 204, 21, 0.92);
+  color: #713f12;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.width-guide__edge--start {
+  left: 0;
+}
+
+.width-guide__edge--end {
+  right: 0;
 }
 
 .canvas-document-shell {
@@ -1521,6 +1574,14 @@ a:focus-visible {
   font-weight: 650;
 }
 
+.slot-kind-tag {
+  padding: 2px 7px;
+  color: #647084 !important;
+  background: #eef1f6;
+  border-radius: 999px;
+  font-weight: 600 !important;
+}
+
 .slot-row__meta {
   display: flex;
   align-items: center;
@@ -1795,12 +1856,18 @@ a:focus-visible {
 
   .save-state,
   .shortcut-tip,
-  .header-button span {
+  .header-button span,
+  .primary-button span {
     display: none;
   }
 
-  .header-button {
+  .header-button,
+  .primary-button {
     padding: 0 10px;
+  }
+
+  .document-name input {
+    width: 150px;
   }
 }
 

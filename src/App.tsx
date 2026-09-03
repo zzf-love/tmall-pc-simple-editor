@@ -22,9 +22,17 @@ import { Inspector } from './components/Inspector'
 import { Modal } from './components/Modal'
 import { ProjectSlots } from './components/ProjectSlots'
 import { useImageHistory } from './hooks/useImageHistory'
-import { generateSignCode, generateStoreCode, importStoreCode, HIDE_NAV_CSS } from './lib/code'
+import { generateSignCode, generateStoreCode, importStoreCodeAsync, HIDE_NAV_CSS } from './lib/code'
 import type { CodeFormat, PlatformId, ProjectKind } from './lib/platform'
-import { CODE_FORMATS, PLATFORMS, PLATFORM_LIST, SIGN_HEIGHTS } from './lib/platform'
+import {
+  CODE_FORMATS,
+  PLATFORMS,
+  PLATFORM_LIST,
+  SIGN_HEIGHTS,
+  isPlatformId,
+  signBreakthroughLeft,
+  signWidthOf,
+} from './lib/platform'
 import {
   CANVAS_WIDTH,
   clampHotspot,
@@ -42,12 +50,31 @@ import type {
   ProjectData,
   ProjectSlot,
   ProjectWorkspace,
+  SlotSettings,
 } from './types'
 
 const STORAGE_KEY = 'putu-editor-project-v1'
 const WORKSPACE_KEY = 'putu-editor-workspace-v1'
 const HOTSPOT_VISIBILITY_KEY = 'putu-editor-hotspot-visibility-v1'
 const ASSET_PANEL_KEY = 'putu-editor-asset-panel-v1'
+
+const DEFAULT_SETTINGS: SlotSettings = {
+  platform: 'tmall990',
+  codeFormat: 'layer',
+  projectKind: 'page',
+  signHeight: 150,
+}
+
+/** 老存储槽没有 settings 字段，或字段被外部改坏时，回退到合法默认值。 */
+function resolveSlotSettings(project: ProjectSlot | ProjectData | undefined): SlotSettings {
+  const saved = project?.settings
+  return {
+    platform: saved && isPlatformId(saved.platform) ? saved.platform : DEFAULT_SETTINGS.platform,
+    codeFormat: saved?.codeFormat === 'imagemap' ? 'imagemap' : 'layer',
+    projectKind: saved?.projectKind === 'sign' ? 'sign' : 'page',
+    signHeight: saved?.signHeight === 120 ? 120 : 150,
+  }
+}
 
 function createProjectSlot(name: string, images: ImageAsset[]): ProjectSlot {
   return {
@@ -163,19 +190,25 @@ function App() {
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
   const projectInput = useRef<HTMLInputElement>(null)
-  const [platform, setPlatform] = useState<PlatformId>('tmall990')
-  const [codeFormat, setCodeFormat] = useState<CodeFormat>('layer')
-  const [projectKind, setProjectKind] = useState<ProjectKind>('page')
-  const [signHeight, setSignHeight] = useState<number>(150)
+  const [initialSettings] = useState(() => resolveSlotSettings(initialProject))
+  const [platform, setPlatform] = useState<PlatformId>(initialSettings.platform)
+  const [codeFormat, setCodeFormat] = useState<CodeFormat>(initialSettings.codeFormat)
+  const [projectKind, setProjectKind] = useState<ProjectKind>(initialSettings.projectKind)
+  const [signHeight, setSignHeight] = useState<number>(initialSettings.signHeight)
+
+  // 当前存储槽要记住的编辑器选择；随选择变化自动写回该槽。
+  const slotSettings: SlotSettings = { platform, codeFormat, projectKind, signHeight }
+
+  const visibleImages = projectKind === 'sign' ? images.slice(0, 1) : images
 
   const generatedCode = useMemo(
     () =>
       projectKind === 'sign'
-        ? generateSignCode(images[0], signHeight, { platform, format: codeFormat })
+        ? generateSignCode(visibleImages[0], signHeight, { platform, format: codeFormat })
         : generateStoreCode(images, { platform, format: codeFormat }),
-    [images, projectKind, signHeight, platform, codeFormat],
+    [images, visibleImages, projectKind, signHeight, platform, codeFormat],
   )
-  const totalHotspots = images.reduce((sum, image) => sum + image.hotspots.length, 0)
+  const totalHotspots = visibleImages.reduce((sum, image) => sum + image.hotspots.length, 0)
 
   const selectedImage = images.find((image) => image.id === selectedImageId) || null
   const selectedHotspot =
@@ -211,7 +244,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const project = projectFromImages(documentName, images)
+    const project = projectFromImages(documentName, images, slotSettings)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(project))
     setProjects((current) => {
       const next = current.map((slot) =>
@@ -220,12 +253,12 @@ function App() {
       persistWorkspace(next, activeProjectId)
       return next
     })
-  }, [activeProjectId, documentName, images, revision])
+  }, [activeProjectId, documentName, images, revision, platform, codeFormat, projectKind, signHeight])
 
   const snapshotCurrentProject = (current: ProjectSlot[]) => {
     const snapshot: ProjectSlot = {
       id: activeProjectId,
-      ...projectFromImages(documentName, images),
+      ...projectFromImages(documentName, images, slotSettings),
     }
     return current.map((project) => (project.id === activeProjectId ? snapshot : project))
   }
@@ -235,6 +268,11 @@ function App() {
     setProjects(nextProjects)
     setActiveProjectId(project.id)
     setDocumentName(project.name)
+    const settings = resolveSlotSettings(project)
+    setPlatform(settings.platform)
+    setCodeFormat(settings.codeFormat)
+    setProjectKind(settings.projectKind)
+    setSignHeight(settings.signHeight)
     replace(structuredClone(project.images))
     setSelectedImageId(project.images[0]?.id || null)
     setSelectedHotspotId(project.images[0]?.hotspots[0]?.id || null)
@@ -256,7 +294,11 @@ function App() {
 
   const createBlankProject = () => {
     const savedProjects = snapshotCurrentProject(projects)
-    const project = createProjectSlot(`未命名页面 ${savedProjects.length + 1}`, [])
+    // 新页面继承当前的平台/格式选择，省去重复切换。
+    const project: ProjectSlot = {
+      id: uid('project'),
+      ...projectFromImages(`未命名页面 ${savedProjects.length + 1}`, [], slotSettings),
+    }
     activateProject(project, [...savedProjects, project], '已新建空白页面')
   }
 
@@ -264,7 +306,14 @@ function App() {
     const savedProjects = snapshotCurrentProject(projects)
     const source = savedProjects.find((project) => project.id === id)
     if (!source) return
-    const copy = createProjectSlot(`${source.name} 副本`, cloneImagesForSlot(source.images))
+    const copy: ProjectSlot = {
+      id: uid('project'),
+      ...projectFromImages(
+        `${source.name} 副本`,
+        cloneImagesForSlot(source.images),
+        resolveSlotSettings(source),
+      ),
+    }
     const sourceIndex = savedProjects.findIndex((project) => project.id === id)
     const nextProjects = [...savedProjects]
     nextProjects.splice(sourceIndex + 1, 0, copy)
@@ -468,12 +517,12 @@ function App() {
     })
     setBusy(false)
     if (!added.length) return notify('图片读取失败，可补充备用宽高后重试')
-    commit((current) => [...current, ...added])
+    commit((current) => (projectKind === 'sign' ? added.slice(0, 1) : [...current, ...added]))
     setSelectedImageId(added[0].id)
     setSelectedHotspotId(null)
     setAddOpen(false)
     setAddUrls('')
-    notify(`已添加 ${added.length} 张图片${failed ? `，${failed} 张读取失败` : '，尺寸已自动识别'}`)
+    notify(projectKind === 'sign' ? '店招图已更换，尺寸已自动识别' : `已添加 ${added.length} 张图片${failed ? `，${failed} 张读取失败` : '，尺寸已自动识别'}`)
   }
 
   const refreshImage = async () => {
@@ -490,17 +539,26 @@ function App() {
     }
   }
 
-  const doImportCode = () => {
+  const doImportCode = async () => {
+    setBusy(true)
     try {
-      const imported = importStoreCode(importCode)
+      // 异步导入会给代码里没写尺寸的 <img> 联网取自然尺寸，避免画布上出现 1920×0 的空图
+      const { images: imported, missingSize } = await importStoreCodeAsync(importCode)
       replace(imported)
       setSelectedImageId(imported[0]?.id || null)
       setSelectedHotspotId(imported[0]?.hotspots[0]?.id || null)
       setImportOpen(false)
       setImportCode('')
-      notify(`已从代码恢复 ${imported.length} 张图片和 ${imported.reduce((sum, image) => sum + image.hotspots.length, 0)} 个热点`)
+      const hotspotCount = imported.reduce((sum, image) => sum + image.hotspots.length, 0)
+      notify(
+        missingSize > 0
+          ? `已恢复 ${imported.length} 张图片和 ${hotspotCount} 个热点；${missingSize} 张图片尺寸读取失败，可选中后点右侧「重新识别」`
+          : `已从代码恢复 ${imported.length} 张图片和 ${hotspotCount} 个热点`,
+      )
     } catch (error) {
       notify(error instanceof Error ? error.message : '代码导入失败')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -510,6 +568,11 @@ function App() {
       if (project.version !== 1 || !Array.isArray(project.images)) throw new Error('不是有效的项目文件')
       replace(project.images)
       setDocumentName(project.name || file.name.replace(/\.putu\.json$/i, ''))
+      const settings = resolveSlotSettings(project)
+      setPlatform(settings.platform)
+      setCodeFormat(settings.codeFormat)
+      setProjectKind(settings.projectKind)
+      setSignHeight(settings.signHeight)
       setSelectedImageId(project.images[0]?.id || null)
       setSelectedHotspotId(project.images[0]?.hotspots[0]?.id || null)
       setImportOpen(false)
@@ -520,7 +583,7 @@ function App() {
   }
 
   const saveProject = () => {
-    const project = projectFromImages(documentName, images)
+    const project = projectFromImages(documentName, images, slotSettings)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(project))
     downloadText(
       `${safeFileName(documentName)}.putu.json`,
@@ -539,9 +602,28 @@ function App() {
     if (!images.length) return notify('请先添加图片')
     const windowRef = window.open('', '_blank')
     if (!windowRef) return notify('浏览器阻止了预览窗口，请允许弹窗后重试')
-    windowRef.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${documentName} · 预览</title><style>html,body{margin:0;padding:0;background:#f1f4f8;}body{display:flex;justify-content:center;overflow-x:hidden}.preview{width:990px;background:#fff;min-height:100vh}</style></head><body><div class="preview">${generatedCode}</div></body></html>`)
+    // 店招按店招模块宽度（淘宝 C 店统一 950），页面按内容区模块宽度（基础版 750）。
+    const previewWidth = projectKind === 'sign' ? signWidthOf(platform) : PLATFORMS[platform].width
+    // 预览容器只包住真实内容：不要 min-height:100vh，否则内容比屏幕矮时
+    // 会在下面拖出一条模块宽的白块，看起来像"多输出了一段内容"。
+    windowRef.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${documentName} · 预览</title><style>html,body{margin:0;padding:0;background:#f1f4f8;}body{display:flex;justify-content:center;align-items:flex-start;overflow-x:hidden}.preview{width:${previewWidth}px;background:#fff}</style></head><body><div class="preview">${generatedCode}</div></body></html>`)
     windowRef.document.close()
   }
+
+  // 当前平台的模块宽度（店招统一 950/990）与通栏模块在 1920 原图上的可视窗口起点
+  const activeModuleWidth = projectKind === 'sign' ? signWidthOf(platform) : PLATFORMS[platform].width
+  const moduleGuide =
+    codeFormat === 'layer'
+      ? {
+          left:
+            projectKind === 'sign'
+              ? -signBreakthroughLeft(platform)
+              : -PLATFORMS[platform].breakthroughLeft,
+          width: activeModuleWidth,
+          label: `${PLATFORMS[platform].shortLabel}${projectKind === 'sign' ? '店招' : ''} ${activeModuleWidth} 可视区`,
+        }
+      : null
+  const outputLabel = `${PLATFORMS[platform].shortLabel} ${activeModuleWidth}${projectKind === 'sign' ? ' 店招' : ''} · ${codeFormat === 'layer' ? '全屏通栏' : '居中显示'}`
 
   return (
     <div className="app-shell">
@@ -558,7 +640,7 @@ function App() {
                 type="button"
                 className={platform === item.id ? 'on' : ''}
                 aria-pressed={platform === item.id}
-                title={`${item.label}：后台模块宽度 ${item.width}px`}
+                title={`${item.label}：页面模块宽 ${item.width}px${item.signWidth !== item.width ? `，店招宽 ${item.signWidth}px` : ''}`}
                 onClick={() => setPlatform(item.id)}
               >
                 {item.label.split(' · ')[0]}
@@ -584,23 +666,23 @@ function App() {
         <nav className="header-actions" aria-label="项目操作">
           <button className="header-button header-button--new" type="button" onClick={createBlankProject}>
             <FilePlus2 size={17} />
-            新建页面
+            <span>新建页面</span>
           </button>
           <button className="header-button" type="button" onClick={() => setImportOpen(true)}>
             <Import size={17} />
-            导入代码
+            <span>导入代码</span>
           </button>
           <button className="header-button" type="button" onClick={saveProject}>
             <Save size={17} />
-            保存草稿
+            <span>保存草稿</span>
           </button>
           <button className="header-button" type="button" onClick={preview}>
             <Eye size={17} />
-            预览
+            <span>预览</span>
           </button>
           <button className="primary-button" type="button" onClick={() => setCodeOpen(true)} disabled={!images.length}>
             <Code2 size={18} />
-            生成代码
+            <span>生成代码</span>
           </button>
           <button className="icon-button help-button" type="button" aria-label="使用帮助" onClick={() => setHelpOpen(true)}>
             <HelpCircle size={19} />
@@ -610,7 +692,7 @@ function App() {
 
       <div className={`workspace ${assetPanelCollapsed ? 'is-assets-collapsed' : ''}`}>
         <AssetPanel
-          images={images}
+          images={visibleImages}
           selectedImageId={selectedImageId}
           onSelect={selectImage}
           onAdd={() => setAddOpen(true)}
@@ -620,7 +702,7 @@ function App() {
           onToggleCollapsed={() => setAssetPanelCollapsed((collapsed) => !collapsed)}
         />
         <CanvasEditor
-          images={images}
+          images={visibleImages}
           selectedImageId={selectedImageId}
           selectedHotspotId={selectedHotspotId}
           mode={mode}
@@ -628,6 +710,8 @@ function App() {
           canUndo={canUndo}
           canRedo={canRedo}
           showHotspots={showHotspots}
+          moduleGuide={moduleGuide}
+          outputLabel={outputLabel}
           onModeChange={setMode}
           onZoomChange={setZoom}
           onSelectImage={selectImage}
@@ -655,7 +739,7 @@ function App() {
       <footer className="status-bar">
         <div><span>画布宽度</span><strong>{CANVAS_WIDTH} px</strong></div>
         <i />
-        <div><span>图片</span><strong>{images.length}</strong></div>
+        <div><span>图片</span><strong>{visibleImages.length}</strong></div>
         <i />
         <div><span>热点</span><strong>{totalHotspots}</strong></div>
         <i />
@@ -678,7 +762,11 @@ function App() {
       <Modal
         open={addOpen}
         title="添加图片"
-        description="每行一个图片库链接，也可以一次粘贴多条；尺寸会自动读取。"
+        description={
+          projectKind === 'sign'
+            ? '店招只保留一张图，粘贴新链接会替换当前店招图；尺寸会自动读取。'
+            : '每行一个图片库链接，也可以一次粘贴多条；尺寸会自动读取。'
+        }
         onClose={() => setAddOpen(false)}
         footer={
           <>
@@ -725,9 +813,9 @@ function App() {
             </button>
             <div className="footer-spacer" />
             <button className="secondary-button" type="button" onClick={() => setImportOpen(false)}>取消</button>
-            <button className="primary-button" type="button" disabled={!importCode.trim()} onClick={doImportCode}>
-              <FileInput size={17} />
-              解析代码
+            <button className="primary-button" type="button" disabled={busy || !importCode.trim()} onClick={doImportCode}>
+              {busy ? <span className="button-spinner" /> : <FileInput size={17} />}
+              <span>{busy ? '正在解析…' : '解析代码'}</span>
             </button>
           </>
         }
@@ -761,14 +849,14 @@ function App() {
         title="装修代码已生成"
         description={
           projectKind === 'sign'
-            ? `店招单图 · ${PLATFORMS[platform].width}×${signHeight}，${images[0]?.hotspots.length ?? 0} 个热点。`
-            : `共 ${images.length} 张图片、${totalHotspots} 个热点，已按 0 px 间隙拼接。`
+            ? `店招单图 · ${signWidthOf(platform)}×${signHeight}，${visibleImages[0]?.hotspots.length ?? 0} 个热点。`
+            : `共 ${visibleImages.length} 张图片、${totalHotspots} 个热点，已按 0 px 间隙拼接。`
         }
         wide
         onClose={() => setCodeOpen(false)}
         footer={
           <>
-            <span className="code-safety"><Check size={14} /> {PLATFORMS[platform].setupHint}</span>
+            <span className="code-safety"><Check size={14} /> {projectKind === 'sign' ? (PLATFORMS[platform].signSetupHint ?? PLATFORMS[platform].setupHint) : PLATFORMS[platform].setupHint}</span>
             <div className="footer-spacer" />
             <button className="secondary-button" type="button" onClick={() => downloadText(`${safeFileName(documentName)}.html`, generatedCode, 'text/html;charset=utf-8')}>
               <Download size={16} />
@@ -830,7 +918,11 @@ function App() {
           )}
         </div>
         <p className="export-note">
-          平台按你的店铺类型选：天猫 990、淘宝 950，对应后台那个模块的宽度，选错图会左右偏。
+          {projectKind === 'sign'
+            ? '店招为全局唯一模块，只导出第一张店招图；其余图片不会出现在代码里（切回页面装修仍保留）。'
+            : `平台按你的店铺类型选：${PLATFORM_LIST.map((item) =>
+                `${item.shortLabel} ${item.width}`,
+              ).join('、')}，对应后台那个模块的宽度，选错图会左右偏。基础版店招仍是 950 宽，不受 750 影响。`}
         </p>
         <p className="export-hint">
           {CODE_FORMATS.find((item) => item.id === codeFormat)?.hint}
@@ -850,7 +942,7 @@ function App() {
         <ol className="help-steps">
           <li><span>1</span><div><strong>粘贴图片链接</strong><p>点击左侧“添加图片”，可一次粘贴多条链接并自动读取尺寸。</p></div></li>
           <li><span>2</span><div><strong>直接框选热点</strong><p>点击“框选热点”后在图片上拖拽；再在右侧粘贴商品链接。</p></div></li>
-          <li><span>3</span><div><strong>生成并复制代码</strong><p>所有图片自动无缝拼接；以后可导入代码或项目文件继续修改。</p></div></li>
+          <li><span>3</span><div><strong>生成并复制代码</strong><p>先选对平台（天猫 990 / 淘宝 950 / 基础版 750）与页面/店招类型；所有图片自动无缝拼接，以后可导入代码或项目文件继续修改。</p></div></li>
         </ol>
         <div className="help-note"><Sparkles size={17} /><span>项目会自动保存在当前浏览器中，建议同时下载草稿文件备份。</span></div>
       </Modal>

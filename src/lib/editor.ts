@@ -1,4 +1,4 @@
-import type { Hotspot, ImageAsset, ProjectData } from '../types'
+import type { Hotspot, ImageAsset, ProjectData, SlotSettings } from '../types'
 
 export const CANVAS_WIDTH = 1920
 
@@ -38,13 +38,18 @@ export function clampHotspot(hotspot: Hotspot, asset: ImageAsset): Hotspot {
   }
 }
 
-export function projectFromImages(name: string, images: ImageAsset[]): ProjectData {
+export function projectFromImages(
+  name: string,
+  images: ImageAsset[],
+  settings?: SlotSettings,
+): ProjectData {
   return {
     version: 1,
     name,
     canvasWidth: CANVAS_WIDTH,
     images,
     updatedAt: new Date().toISOString(),
+    ...(settings ? { settings } : {}),
   }
 }
 

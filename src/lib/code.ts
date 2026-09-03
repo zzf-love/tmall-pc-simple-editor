@@ -1,7 +1,7 @@
 import type { Hotspot, ImageAsset } from '../types'
-import { CANVAS_WIDTH, uid } from './editor'
+import { CANVAS_WIDTH, loadImageDimensions, uid } from './editor'
 import type { CodeFormat, PlatformId } from './platform'
-import { PLATFORMS } from './platform'
+import { PLATFORMS, signBreakthroughLeft, signWidthOf } from './platform'
 
 const escapeAttr = (value: string) =>
   value
@@ -19,29 +19,59 @@ export interface ExportOptions {
 // 内容按 CANVAS_WIDTH（1920）整幅铺开，再用负偏移拉回，使其在任意宽度的
 // 模块里居中——这是"通栏"的实现方式。
 
-function layerHotspot(hotspot: Hotspot, imageIndex: number, index: number, systemClass: string) {
-  return `<div class="putu-area-${imageIndex + 1}-${index + 1} ${systemClass}" data-w="area" style="position:absolute;height:auto;width:auto;left:auto;top:auto;right:auto;display:block;z-index:1;overflow:inherit;background:none;border:0;padding:0;line-height:normal;left:${Math.round(hotspot.x)}px;top:${Math.round(hotspot.y)}px;width:${Math.round(hotspot.width)}px;height:${Math.round(hotspot.height)}px;z-index:${index + 2};"><a href="${escapeAttr(hotspot.href || '#')}" target="${hotspot.target}" style="display:block;height:100%;"></a></div>`
+function layerHotspot(
+  hotspot: Hotspot,
+  imageIndex: number,
+  index: number,
+  systemClass: string,
+  offsetX = 0,
+  offsetY = 0,
+) {
+  const x = Math.round(hotspot.x + offsetX)
+  const y = Math.round(hotspot.y + offsetY)
+  const width = Math.round(hotspot.width)
+  const height = Math.round(hotspot.height)
+  return `<div class="putu-area-${imageIndex + 1}-${index + 1} ${systemClass}" data-w="area" style="position:absolute;left:${x}px;top:${y}px;width:${width}px;height:${height}px;display:block;z-index:${index + 2};overflow:inherit;background:none;border:0;padding:0;margin:0;line-height:normal;"><a href="${escapeAttr(hotspot.href || '#')}" target="${hotspot.target}" style="display:block;width:100%;height:100%;"></a></div>`
 }
 
-function layerPage(images: ImageAsset[], platform: PlatformId) {
-  const { width, systemClass, title } = PLATFORMS[platform]
-  const totalHeight = images.reduce((sum, image) => sum + image.height, 0)
-  const left = -Math.round((CANVAS_WIDTH - width) / 2)
+/**
+ * 通栏结构（页面与店招共用）。
+ * - 页面模块宽度取 platform.width，左偏移取 platform.breakthroughLeft
+ *   （基础版 750 在右栏，偏移与居中模块不同）。
+ * - 店招模块宽度取 signWidth（淘宝 C 店统一 950），偏移按居中公式。
+ * fixedHeight 用于店招固定高度；页面按图片高度之和。
+ */
+function layerPage(images: ImageAsset[], platform: PlatformId, fixedHeight?: number, isSign = false) {
+  const config = PLATFORMS[platform]
+  const moduleWidth = isSign ? config.signWidth : config.width
+  const left = isSign ? signBreakthroughLeft(platform) : config.breakthroughLeft
+  const { systemClass, title } = config
+  const naturalHeight = images.reduce((sum, image) => sum + image.height, 0)
+  const totalHeight = fixedHeight ?? naturalHeight
   const sections = images
     .map((image, imageIndex) => {
+      const sectionHeight = fixedHeight ?? image.height
+      // 背景图是 `no-repeat center center`：图片比 1920 窄（或比固定高度矮/高）时，
+      // 浏览器会把它居中留白或居中裁切。热点坐标是原图像素，必须跟着同样的居中量平移，
+      // 否则整组热点会偏移 (1920-图宽)/2 ——990 宽的图会整体偏出模块 465px，点不到。
+      const offsetX = (CANVAS_WIDTH - image.width) / 2
+      const offsetY = (sectionHeight - image.height) / 2
       const hotspots = image.hotspots
-        .map((hotspot, index) => layerHotspot(hotspot, imageIndex, index, systemClass))
+        .map((hotspot, index) =>
+          layerHotspot(hotspot, imageIndex, index, systemClass, offsetX, offsetY),
+        )
         .join('')
-      return `<div style="height:${image.height}px;width:${CANVAS_WIDTH}px;position:relative;background:transparent url(${escapeAttr(image.url)}) no-repeat center center scroll;overflow:hidden;display:block;border:0;padding:0;margin:0;line-height:0;font-size:0;" data-w="mk">${hotspots}</div>`
+      return `<div style="height:${sectionHeight}px;width:${CANVAS_WIDTH}px;position:relative;background:transparent url(${escapeAttr(image.url)}) no-repeat center center scroll;overflow:hidden;display:block;border:0;padding:0;margin:0;line-height:0;font-size:0;" data-w="mk">${hotspots}</div>`
     })
     .join('')
 
-  return `<div style="height:${totalHeight}px;" class="jg_tools_code xx_diy_code" data-title="${title}"><div class="${systemClass}" style="position:absolute;background:none;border:0;padding:0;margin:0;z-index:20;width:${width}px;height:${totalHeight}px;top:auto;left:auto;line-height:normal;"><div class="${systemClass}" style="position:absolute;background:none;border:0;padding:0;margin:0;width:${CANVAS_WIDTH}px;height:${totalHeight}px;top:auto;left:${left}px;">${sections}</div></div></div>`
+  return `<div style="height:${totalHeight}px;" class="jg_tools_code xx_diy_code" data-title="${title}"><div class="${systemClass}" style="position:absolute;background:none;border:0;padding:0;margin:0;z-index:20;width:${moduleWidth}px;height:${totalHeight}px;top:auto;left:auto;line-height:normal;"><div class="${systemClass}" style="position:absolute;background:none;border:0;padding:0;margin:0;width:${CANVAS_WIDTH}px;height:${totalHeight}px;top:auto;left:${left}px;">${sections}</div></div></div>`
 }
 
 // ── 图片热区：img usemap + map/area ───────────────────────────────
 // 与线上已验证的现网装修同构。坐标是 area 的 rect 写法：左,上,右,下。
 // 图片按模块宽度呈现，不做通栏突破。
+// data-ow/data-oh 记录原图像素，导入时才能把缩放后的 coords 还原回原图空间。
 
 function mapAreas(hotspots: Hotspot[], scale: number) {
   return hotspots
@@ -55,6 +85,10 @@ function mapAreas(hotspots: Hotspot[], scale: number) {
     .join('')
 }
 
+function originalSizeAttrs(image: ImageAsset) {
+  return ` data-ow="${image.width}" data-oh="${image.height}"`
+}
+
 function imageMapPage(images: ImageAsset[], platform: PlatformId) {
   const { width, title } = PLATFORMS[platform]
   const blocks = images
@@ -66,7 +100,7 @@ function imageMapPage(images: ImageAsset[], platform: PlatformId) {
       const areas = mapAreas(image.hotspots, scale)
       const map = areas ? `<map name="${name}">${areas}</map>` : ''
       const usemap = areas ? ` usemap="#${name}"` : ''
-      return `<img src="${escapeAttr(image.url)}" width="${width}" height="${height}" style="display:block;border:0;" alt=""${usemap} />${map}`
+      return `<img src="${escapeAttr(image.url)}" width="${width}" height="${height}"${originalSizeAttrs(image)} style="display:block;border:0;" alt=""${usemap} />${map}`
     })
     .join('')
 
@@ -83,7 +117,8 @@ export function generateStoreCode(images: ImageAsset[], options: ExportOptions =
 
 /**
  * 店招：单图、固定高度（120 或 150）。
- * 图片按模块宽度呈现，热点坐标同比缩放。
+ * - layer（全屏通栏）：与页面通栏同构，1920 原图居中突破，热点用原图像素坐标。
+ * - imagemap（居中显示）：图按模块宽度等比缩放（不拉伸变形），热点同比缩放。
  */
 export function generateSignCode(
   image: ImageAsset | undefined,
@@ -92,27 +127,21 @@ export function generateSignCode(
 ) {
   const platform = options.platform ?? 'tmall990'
   const format = options.format ?? 'imagemap'
-  const { width, title, systemClass } = PLATFORMS[platform]
+  const width = signWidthOf(platform)
   if (!image) return ''
 
-  const scale = image.width ? width / image.width : 1
-
-  if (format === 'imagemap') {
-    const areas = mapAreas(image.hotspots, scale)
-    const name = `hzsign${Date.now().toString(36)}`
-    const map = areas ? `<map name="${name}">${areas}</map>` : ''
-    const usemap = areas ? ` usemap="#${name}"` : ''
-    return `<div class="hotzone-sign" data-title="${title}" style="width:${width}px;height:${height}px;margin:0 auto;line-height:0;font-size:0;overflow:hidden;"><img src="${escapeAttr(image.url)}" width="${width}" height="${height}" style="display:block;border:0;" alt=""${usemap} />${map}</div>`
+  if (format === 'layer') {
+    // 通栏店招与页面通栏是同一套突破结构，只是高度固定为店招高度。
+    return layerPage([image], platform, height, true)
   }
 
-  const hotspots = image.hotspots
-    .map(
-      (hotspot, index) =>
-        `<div class="putu-sign-${index + 1} ${systemClass}" data-w="area" style="position:absolute;display:block;background:none;border:0;padding:0;line-height:normal;left:${Math.round(hotspot.x * scale)}px;top:${Math.round(hotspot.y * scale)}px;width:${Math.round(hotspot.width * scale)}px;height:${Math.round(hotspot.height * scale)}px;z-index:${index + 2};"><a href="${escapeAttr(hotspot.href || '#')}" target="${hotspot.target}" style="display:block;height:100%;"></a></div>`,
-    )
-    .join('')
-
-  return `<div class="hotzone-sign" data-title="${title}" style="width:${width}px;height:${height}px;margin:0 auto;position:relative;overflow:hidden;line-height:0;font-size:0;"><img src="${escapeAttr(image.url)}" width="${width}" height="${height}" style="display:block;border:0;" alt="" />${hotspots}</div>`
+  const scale = image.width ? width / image.width : 1
+  const renderedHeight = Math.round(image.height * scale)
+  const areas = mapAreas(image.hotspots, scale)
+  const name = `hzsign${Date.now().toString(36)}`
+  const map = areas ? `<map name="${name}">${areas}</map>` : ''
+  const usemap = areas ? ` usemap="#${name}"` : ''
+  return `<div class="hotzone-sign" data-title="${PLATFORMS[platform].title}" style="width:${width}px;height:${height}px;margin:0 auto;overflow:hidden;line-height:0;font-size:0;"><img src="${escapeAttr(image.url)}" width="${width}" height="${renderedHeight}"${originalSizeAttrs(image)} style="display:block;border:0;" alt=""${usemap} />${map}</div>`
 }
 
 /** 自制导航时用来隐藏系统导航的 CSS，粘到导航模块的「显示设置」里。 */
@@ -120,7 +149,8 @@ export const HIDE_NAV_CSS = `.skin-box-bd .menu-list{display:none;}
 .all-cats{display:none;}
 .skin-box-bd{background:none;}`
 
-const px = (style: CSSStyleDeclaration, property: keyof CSSStyleDeclaration) => {
+const px = (style: CSSStyleDeclaration | undefined | null, property: keyof CSSStyleDeclaration) => {
+  if (!style) return 0
   const raw = String(style[property] || '')
   const value = Number.parseFloat(raw)
   return Number.isFinite(value) ? value : 0
@@ -133,26 +163,26 @@ function getBackgroundUrl(element: HTMLElement) {
   return match?.[2]?.replaceAll('&amp;', '&') || ''
 }
 
-function hotspotFromElement(element: HTMLElement, index: number): Hotspot | null {
+function hotspotFromElement(element: HTMLElement, index: number, scale = 1): Hotspot | null {
   const anchor = element.matches('a') ? (element as HTMLAnchorElement) : element.querySelector('a')
   const source = element
-  const width = px(source.style, 'width') || px(anchor?.style || source.style, 'width')
-  const height = px(source.style, 'height') || px(anchor?.style || source.style, 'height')
+  const width = px(source.style, 'width') || px(anchor?.style, 'width')
+  const height = px(source.style, 'height') || px(anchor?.style, 'height')
   if (!width || !height) return null
 
   return {
     id: uid('hotspot'),
     label: `热点 ${String(index + 1).padStart(2, '0')}`,
-    x: px(source.style, 'left'),
-    y: px(source.style, 'top'),
-    width,
-    height,
+    x: Math.round(px(source.style, 'left') / scale),
+    y: Math.round(px(source.style, 'top') / scale),
+    width: Math.round(width / scale),
+    height: Math.round(height / scale),
     href: anchor?.getAttribute('href') || '#',
     target: anchor?.getAttribute('target') === '_self' ? '_self' : '_blank',
   }
 }
 
-/** 从 <area coords="左,上,右,下"> 还原热点。 */
+/** 从 <area coords="左,上,右,下"> 还原热点；scale=渲染宽/原图宽，坐标除回原图空间。 */
 function hotspotFromArea(area: HTMLAreaElement, index: number, scale: number): Hotspot | null {
   const parts = (area.getAttribute('coords') || '')
     .split(',')
@@ -166,44 +196,116 @@ function hotspotFromArea(area: HTMLAreaElement, index: number, scale: number): H
   return {
     id: uid('hotspot'),
     label: `热点 ${String(index + 1).padStart(2, '0')}`,
-    x: left / scale,
-    y: top / scale,
-    width: width / scale,
-    height: height / scale,
+    x: Math.round(left / scale),
+    y: Math.round(top / scale),
+    width: Math.round(width / scale),
+    height: Math.round(height / scale),
     href: area.getAttribute('href') || '#',
     target: area.getAttribute('target') === '_self' ? '_self' : '_blank',
   }
 }
 
-export function importStoreCode(code: string): ImageAsset[] {
+/** 解析阶段的原始记录：尺寸与热点坐标先停留在「代码声明空间」，确定原图尺寸后再统一换算。 */
+interface PendingImportImage {
+  /** img：真实 <img>，缺尺寸时可联网取自然尺寸；bg：背景图 div，尺寸以样式声明为准 */
+  kind: 'img' | 'bg'
+  name: string
+  url: string
+  /** width/height 属性或容器样式声明的渲染尺寸，0 表示代码里没写 */
+  declaredW: number
+  declaredH: number
+  /** 导出时写入的原图像素 data-ow/data-oh，0 表示没有 */
+  dataW: number
+  dataH: number
+  /** usemap 热区（坐标在渲染尺寸空间） */
+  areas: HTMLAreaElement[]
+  /** 定位层热区元素（坐标在渲染尺寸空间） */
+  boxes: HTMLElement[]
+}
+
+const attrNumber = (element: Element, attribute: string) =>
+  Number.parseFloat(element.getAttribute(attribute) || '') || 0
+
+/**
+ * 用确定下来的原图尺寸构建素材：area/定位热点坐标写在「渲染尺寸空间」，
+ * 除以 scale 还原为原图像素；代码没有声明渲染宽度时，图片按自然尺寸渲染，scale=1。
+ */
+function buildImportedAsset(
+  record: PendingImportImage,
+  index: number,
+  natural?: { width: number; height: number },
+): ImageAsset {
+  const origW = record.dataW || natural?.width || record.declaredW || CANVAS_WIDTH
+  const origH = record.dataH || natural?.height || record.declaredH || 0
+  const renderedW = record.declaredW || origW
+  const scale = origW ? renderedW / origW : 1
+  const areaHotspots = record.areas.map((area, areaIndex) => hotspotFromArea(area, areaIndex, scale))
+  const boxHotspots = record.boxes.map((element, boxIndex) =>
+    hotspotFromElement(element, record.areas.length + boxIndex, scale),
+  )
+  const hotspots = [...areaHotspots, ...boxHotspots].filter(
+    (hotspot): hotspot is Hotspot => Boolean(hotspot),
+  )
+  return {
+    id: uid('image'),
+    name: record.name || `导入图片 ${index + 1}`,
+    url: record.url,
+    width: origW,
+    height: origH,
+    hotspots,
+  }
+}
+
+/** 纯结构解析（不联网）：返回三条识别路径命中的原始记录，一条都没命中时抛错。 */
+function parseImportCode(code: string): PendingImportImage[] {
   const document = new DOMParser().parseFromString(code, 'text/html')
 
-  // ① 图片热区结构：img[usemap] + map/area
+  // ① 图片热区结构：img[usemap] + map/area（马工/小语言等外部工具导出的常见形态，
+  // 往往不带 width/height 属性，尺寸需要后续联网按自然尺寸补齐）
   const mapped = Array.from(document.querySelectorAll<HTMLImageElement>('img[usemap]'))
   if (mapped.length) {
-    const images = mapped.map((img, imageIndex) => {
-      const mapName = (img.getAttribute('usemap') || '').replace(/^#/, '')
-      const map = mapName ? document.querySelector<HTMLMapElement>(`map[name="${mapName}"]`) : null
-      const width = Number.parseFloat(img.getAttribute('width') || '') || CANVAS_WIDTH
-      const height = Number.parseFloat(img.getAttribute('height') || '') || 0
-      const areas = map ? Array.from(map.querySelectorAll('area')) : []
-      const hotspots = areas
-        .map((area, index) => hotspotFromArea(area, index, 1))
-        .filter((hotspot): hotspot is Hotspot => Boolean(hotspot))
-
-      return {
-        id: uid('image'),
-        name: `导入图片 ${imageIndex + 1}`,
-        url: img.getAttribute('src') || '',
-        width,
-        height,
-        hotspots,
-      }
-    })
-    if (images.some((image) => image.url)) return images.filter((image) => image.url)
+    const records = mapped
+      .map((img) => {
+        const mapName = (img.getAttribute('usemap') || '').replace(/^#/, '')
+        const map = mapName ? document.querySelector<HTMLMapElement>(`map[name="${mapName}"]`) : null
+        return {
+          kind: 'img' as const,
+          name: '',
+          url: img.getAttribute('src') || '',
+          declaredW: attrNumber(img, 'width'),
+          declaredH: attrNumber(img, 'height'),
+          dataW: attrNumber(img, 'data-ow'),
+          dataH: attrNumber(img, 'data-oh'),
+          areas: map ? Array.from(map.querySelectorAll('area')) : [],
+          boxes: [] as HTMLElement[],
+        }
+      })
+      .filter((record) => record.url)
+    if (records.length) return records
   }
 
-  // ② 定位图层结构：带背景图的 div + 绝对定位锚点
+  // ② <img> 模块（无 usemap）：旧版店招 layer 输出（img + 兄弟 data-w=area 热点层），
+  // 以及没有热点的居中图片；宽度达到模块尺寸才认作装修图片，避免误抓小图标。
+  const overlayBlocks = Array.from(document.querySelectorAll<HTMLImageElement>('img'))
+    .filter((img) => !img.getAttribute('usemap'))
+    .filter((img) => attrNumber(img, 'width') >= 750)
+  if (overlayBlocks.length) {
+    return overlayBlocks.map((img) => ({
+      kind: 'img' as const,
+      name: '',
+      url: img.getAttribute('src') || '',
+      declaredW: attrNumber(img, 'width'),
+      declaredH: attrNumber(img, 'height'),
+      dataW: attrNumber(img, 'data-ow'),
+      dataH: attrNumber(img, 'data-oh'),
+      areas: [] as HTMLAreaElement[],
+      boxes: img.parentElement
+        ? Array.from(img.parentElement.querySelectorAll<HTMLElement>('[data-w="area"]'))
+        : [],
+    }))
+  }
+
+  // ③ 定位图层结构：带背景图的 div + 绝对定位锚点
   const explicit = Array.from(document.querySelectorAll<HTMLElement>('[data-putu-image]'))
   const candidates = explicit.length
     ? explicit
@@ -214,10 +316,8 @@ export function importStoreCode(code: string): ImageAsset[] {
         return Boolean(url && width >= 750 && height >= 80)
       })
 
-  const images = candidates.map((element, imageIndex) => {
-    const url = getBackgroundUrl(element)
-    const width = px(element.style, 'width') || CANVAS_WIDTH
-    const height = px(element.style, 'height')
+  if (!candidates.length) throw new Error('没有识别到带背景图和尺寸的装修模块')
+  return candidates.map((element, index) => {
     const explicitHotspots = Array.from(
       element.querySelectorAll<HTMLElement>('[data-putu-hotspot], [data-w="area"]'),
     )
@@ -226,20 +326,52 @@ export function importStoreCode(code: string): ImageAsset[] {
       : Array.from(element.querySelectorAll<HTMLElement>('a')).filter(
           (anchor) => px(anchor.style, 'width') > 0 && px(anchor.style, 'height') > 0,
         )
-    const hotspots = hotspotElements
-      .map((hotspot, index) => hotspotFromElement(hotspot, index))
-      .filter((hotspot): hotspot is Hotspot => Boolean(hotspot))
-
     return {
-      id: uid('image'),
-      name: element.dataset.putuName || `导入图片 ${imageIndex + 1}`,
-      url,
-      width,
-      height,
-      hotspots,
+      kind: 'bg' as const,
+      name: element.dataset.putuName || '',
+      url: getBackgroundUrl(element),
+      declaredW: px(element.style, 'width') || CANVAS_WIDTH,
+      declaredH: px(element.style, 'height'),
+      dataW: 0,
+      dataH: 0,
+      areas: [] as HTMLAreaElement[],
+      boxes: hotspotElements,
     }
   })
+}
 
-  if (!images.length) throw new Error('没有识别到带背景图和尺寸的装修模块')
-  return images
+/** 同步导入：只用代码里声明的尺寸（测试与无网络场景使用）。 */
+export function importStoreCode(code: string): ImageAsset[] {
+  return parseImportCode(code).map((record, index) => buildImportedAsset(record, index))
+}
+
+export interface ImportStoreResult {
+  images: ImageAsset[]
+  /** 尝试联网取尺寸但失败的图片数（已按兜底尺寸导入，可在右侧点「重新识别」补救） */
+  missingSize: number
+}
+
+/**
+ * 导入的推荐入口：先解析结构，再给「代码里没写尺寸、也没有 data-ow」的真实 <img>
+ * 联网加载自然尺寸，避免外部工具（马工等）导出的无尺寸 img 被当成 1920×0 而在画布上消失。
+ */
+export async function importStoreCodeAsync(code: string): Promise<ImportStoreResult> {
+  const records = parseImportCode(code)
+  const dimensions = await Promise.all(
+    records.map(async (record) => {
+      if (record.kind !== 'img' || record.dataW || !record.url) return null
+      try {
+        return await loadImageDimensions(record.url)
+      } catch {
+        return false as const
+      }
+    }),
+  )
+  let missingSize = 0
+  const images = records.map((record, index) => {
+    const loaded = dimensions[index]
+    if (loaded === false) missingSize += 1
+    return buildImportedAsset(record, index, loaded || undefined)
+  })
+  return { images, missingSize }
 }

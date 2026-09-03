@@ -1,3 +1,5 @@
+import type { CodeFormat, PlatformId, ProjectKind } from './lib/platform'
+
 export type OpenTarget = '_blank' | '_self'
 
 export interface Hotspot {
@@ -20,12 +22,21 @@ export interface ImageAsset {
   hotspots: Hotspot[]
 }
 
+/** 随存储槽一起记住的编辑器选择（平台/格式/项目类型/店招高度） */
+export interface SlotSettings {
+  platform: PlatformId
+  codeFormat: CodeFormat
+  projectKind: ProjectKind
+  signHeight: number
+}
+
 export interface ProjectData {
   version: 1
   name: string
   canvasWidth: number
   images: ImageAsset[]
   updatedAt: string
+  settings?: SlotSettings
 }
 
 export interface ProjectSlot extends ProjectData {

@@ -1,6 +1,7 @@
 import { Check, Copy, FilePlus2, Image as ImageIcon, MousePointer2, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ProjectSlot } from '../types'
+import { PLATFORMS, isPlatformId } from '../lib/platform'
 import { Modal } from './Modal'
 
 interface ProjectSlotsProps {
@@ -68,6 +69,9 @@ export function ProjectSlots({
           const hotspotCount = project.images.reduce((sum, image) => sum + image.hotspots.length, 0)
           const active = project.id === activeId
           const pendingDelete = project.id === pendingDeleteId
+          const platformId = project.settings?.platform
+          const platformLabel = platformId && isPlatformId(platformId) ? PLATFORMS[platformId].shortLabel : '天猫'
+          const kindLabel = project.settings?.projectKind === 'sign' ? '店招' : '页面'
           return (
             <article className={`slot-row ${active ? 'is-active' : ''}`} key={project.id}>
               <button className="slot-row__main" type="button" onClick={() => onSwitch(project.id)}>
@@ -75,6 +79,7 @@ export function ProjectSlots({
                 <span className="slot-row__content">
                   <span className="slot-row__title">
                     <strong>{project.name || `未命名页面 ${index + 1}`}</strong>
+                    <em className="slot-kind-tag">{platformLabel} · {kindLabel}</em>
                     {active && <em><Check size={12} />当前页面</em>}
                   </span>
                   <span className="slot-row__meta">
