@@ -163,7 +163,13 @@ function getBackgroundUrl(element: HTMLElement) {
   return match?.[2]?.replaceAll('&amp;', '&') || ''
 }
 
-function hotspotFromElement(element: HTMLElement, index: number, scale = 1): Hotspot | null {
+function hotspotFromElement(
+  element: HTMLElement,
+  index: number,
+  scale = 1,
+  offsetX = 0,
+  offsetY = 0,
+): Hotspot | null {
   const anchor = element.matches('a') ? (element as HTMLAnchorElement) : element.querySelector('a')
   const source = element
   const width = px(source.style, 'width') || px(anchor?.style, 'width')
@@ -173,8 +179,8 @@ function hotspotFromElement(element: HTMLElement, index: number, scale = 1): Hot
   return {
     id: uid('hotspot'),
     label: `热点 ${String(index + 1).padStart(2, '0')}`,
-    x: Math.round(px(source.style, 'left') / scale),
-    y: Math.round(px(source.style, 'top') / scale),
+    x: Math.round((px(source.style, 'left') - offsetX) / scale),
+    y: Math.round((px(source.style, 'top') - offsetY) / scale),
     width: Math.round(width / scale),
     height: Math.round(height / scale),
     href: anchor?.getAttribute('href') || '#',
@@ -237,11 +243,19 @@ function buildImportedAsset(
 ): ImageAsset {
   const origW = record.dataW || natural?.width || record.declaredW || CANVAS_WIDTH
   const origH = record.dataH || natural?.height || record.declaredH || 0
+
+  // img：图片被缩放到声明宽度，坐标除以 scale 还原。
+  // bg（定位图层/通栏）：背景是 `no-repeat center center`，不缩放而是在声明的容器里居中，
+  //   容器尺寸和原图不一致时（旧代码/外部工具很常见），热点写在容器空间，
+  //   要减掉居中留白才能落回原图像素空间。
+  const isBackground = record.kind === 'bg'
   const renderedW = record.declaredW || origW
-  const scale = origW ? renderedW / origW : 1
+  const scale = isBackground || !origW ? 1 : renderedW / origW
+  const offsetX = isBackground ? (renderedW - origW) / 2 : 0
+  const offsetY = isBackground ? ((record.declaredH || origH) - origH) / 2 : 0
   const areaHotspots = record.areas.map((area, areaIndex) => hotspotFromArea(area, areaIndex, scale))
   const boxHotspots = record.boxes.map((element, boxIndex) =>
-    hotspotFromElement(element, record.areas.length + boxIndex, scale),
+    hotspotFromElement(element, record.areas.length + boxIndex, scale, offsetX, offsetY),
   )
   const hotspots = [...areaHotspots, ...boxHotspots].filter(
     (hotspot): hotspot is Hotspot => Boolean(hotspot),
@@ -359,7 +373,10 @@ export async function importStoreCodeAsync(code: string): Promise<ImportStoreRes
   const records = parseImportCode(code)
   const dimensions = await Promise.all(
     records.map(async (record) => {
-      if (record.kind !== 'img' || record.dataW || !record.url) return null
+      // bg 也要联网取尺寸：定位图层代码里写的是「容器」宽高，未必等于原图尺寸。
+      // 沿用容器高度会让导出的 `center center` 背景上下留白（容器比图高），
+      // 或裁掉图片（容器比图矮）——这正是"预览上下有空白"的成因。
+      if (record.dataW || !record.url) return null
       try {
         return await loadImageDimensions(record.url)
       } catch {

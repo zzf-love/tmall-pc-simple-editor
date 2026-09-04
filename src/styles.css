@@ -851,7 +851,12 @@ a:focus-visible {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: fill;
+  /* 和导出保持一致：导出用的是 `background ... no-repeat center center`，
+     图片按原始像素居中、不缩放。这里若用 object-fit:fill，尺寸不符的图会被拉伸铺满，
+     画布上看不出问题、导出后却上下留白（所见非所得）。改成 none + center 之后，
+     尺寸对不上会在画布上直接显示出留白，和预览、线上完全一致。 */
+  object-fit: none;
+  object-position: center;
   pointer-events: none;
 }
 

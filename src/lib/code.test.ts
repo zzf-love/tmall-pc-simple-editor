@@ -245,6 +245,37 @@ describe('sign code', () => {
   })
 })
 
+describe('layer container height that differs from the image natural height', () => {
+  // 用户线上遇到的形态：容器写 769px，但原图其实是 1920x700。
+  // 沿用容器高度会让导出的 center center 背景上下各留白 (769-700)/2 = 34.5px。
+  const layerCode = (h: number) =>
+    `<div style="height:${h}px;" class="jg_tools_code xx_diy_code"><div class="sn-simple-logo jgabs" style="position:absolute;width:990px;height:${h}px;top:auto;left:auto;"><div class="sn-simple-logo jgabs" style="position:absolute;width:1920px;height:${h}px;top:auto;left:-465px;"><div style="height:${h}px;width:1920px;position:relative;background:transparent url(//img.example.com/k.jpg) no-repeat center center scroll;overflow:hidden;" data-w="mk"><div data-w="area" style="position:absolute;left:300px;top:138px;width:513px;height:584px;"><a href="//a.example.com" target="_blank" style="display:block;width:100%;height:100%;"></a></div></div></div></div></div>`
+
+  it('async import takes the image natural height, not the container height', async () => {
+    ;(loadImageDimensions as Mock).mockResolvedValue({ width: 1920, height: 700 })
+    const { images } = await importStoreCodeAsync(layerCode(769))
+    // 图片按真实原图尺寸导入，而不是容器声明的 769
+    expect(images[0]).toMatchObject({ width: 1920, height: 700 })
+    // 热点从容器空间减去居中留白 (769-700)/2 = 34.5，落回原图像素空间
+    expect(images[0].hotspots[0]).toMatchObject({ x: 300, y: 104, width: 513, height: 584 })
+  })
+
+  it('re-exporting the corrected asset leaves no top/bottom gap', async () => {
+    ;(loadImageDimensions as Mock).mockResolvedValue({ width: 1920, height: 700 })
+    const { images } = await importStoreCodeAsync(layerCode(769))
+    const code = generateStoreCode(images, { platform: 'tmall990', format: 'layer' })
+    // 容器高度 == 原图高度 → center center 不再留白
+    expect(code).toContain('height:700px;width:1920px')
+    expect(code).not.toContain('height:769px')
+  })
+
+  it('sync import still falls back to the declared container size', () => {
+    const imported = importStoreCode(layerCode(769))
+    expect(imported[0]).toMatchObject({ width: 1920, height: 769 })
+    expect(imported[0].hotspots[0]).toMatchObject({ x: 300, y: 138 })
+  })
+})
+
 describe('import external code whose img carries no dimensions', () => {
   it('sync import falls back and keeps area coords untouched', () => {
     const code = '<div><img src="//cdn/x.jpg" usemap="#m" /><map name="m"><area coords="10,20,110,170" href="//a.com" /></map></div>'
