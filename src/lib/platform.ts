@@ -8,7 +8,7 @@
 // 因此本文件提供两套导出格式，由使用者按自己后台的实际表现选择，
 // 而不是替他赌一个未经验证的结构。
 
-export type PlatformId = 'tmall990' | 'taobao950' | 'taobao750'
+export type PlatformId = 'tmall990' | 'taobao950' | 'taobao750' | 'generic'
 export type CodeFormat = 'layer' | 'imagemap'
 export type ProjectKind = 'page' | 'sign'
 
@@ -36,6 +36,11 @@ export interface PlatformConfig {
   setupHint: string
   /** 店招后台操作提示（缺省与页面相同） */
   signSetupHint?: string
+  /**
+   * 通用版：不依赖任何平台的模块宽度与系统类名，输出按容器宽度自适应、
+   * 热点用百分比定位的独立 HTML。width/breakthroughLeft/systemClass 对它无意义。
+   */
+  responsive?: boolean
 }
 
 export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
@@ -73,6 +78,21 @@ export const PLATFORMS: Record<PlatformId, PlatformConfig> = {
     setupHint:
       '基础版只有「左 190 + 右 750」一种布局：后台「布局管理」建好该布局，把「自定义内容区」拖到右侧 750 栏，代码必须粘在右侧 750 模块里，粘错栏会整体偏移。',
     signSetupHint: '基础版店招仍是 950 宽：代码粘到「店铺招牌 → 自定义招牌 → 源码」。',
+  },
+  generic: {
+    id: 'generic',
+    label: '通用版 · 自适应',
+    shortLabel: '通用',
+    // 通用版没有固定模块宽度。这里的 1920 只是名义值（与 editor 的 CANVAS_WIDTH 一致，
+    // 不从那边 import 是为了避免 platform → editor → types → platform 的循环依赖）；
+    // 实际输出按容器宽度自适应，「居中显示」时的最大宽度取原图宽。
+    width: 1920,
+    signWidth: 1920,
+    breakthroughLeft: 0,
+    systemClass: '',
+    title: '热区工坊',
+    setupHint: '粘到任意网站的 HTML 区域即可，只用内联样式，不需要额外 CSS 或 JS。',
+    responsive: true,
   },
 }
 

@@ -196,6 +196,14 @@ function App() {
   const [projectKind, setProjectKind] = useState<ProjectKind>(initialSettings.projectKind)
   const [signHeight, setSignHeight] = useState<number>(initialSettings.signHeight)
 
+  // 通用版：不绑定任何平台，输出自适应 HTML。它没有「店招」这个概念（那是淘宝页头模块），
+  // 所以切到通用版时把项目类型退回页面装修，界面上也不再显示店招选项。
+  const isGeneric = PLATFORMS[platform].responsive === true
+  const choosePlatform = (id: PlatformId) => {
+    setPlatform(id)
+    if (PLATFORMS[id].responsive) setProjectKind('page')
+  }
+
   // 当前存储槽要记住的编辑器选择；随选择变化自动写回该槽。
   const slotSettings: SlotSettings = { platform, codeFormat, projectKind, signHeight }
 
@@ -603,7 +611,12 @@ function App() {
     const windowRef = window.open('', '_blank')
     if (!windowRef) return notify('浏览器阻止了预览窗口，请允许弹窗后重试')
     // 店招按店招模块宽度（淘宝 C 店统一 950），页面按内容区模块宽度（基础版 750）。
-    const previewWidth = projectKind === 'sign' ? signWidthOf(platform) : PLATFORMS[platform].width
+    // 通用版没有固定模块宽度，按原图宽预览（代码本身是自适应的，窄屏会等比缩小）。
+    const previewWidth = isGeneric
+      ? images[0]?.width || CANVAS_WIDTH
+      : projectKind === 'sign'
+        ? signWidthOf(platform)
+        : PLATFORMS[platform].width
     // 预览容器只包住真实内容：不要 min-height:100vh，否则内容比屏幕矮时
     // 会在下面拖出一条模块宽的白块，看起来像"多输出了一段内容"。
     windowRef.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${documentName} · 预览</title><style>html,body{margin:0;padding:0;background:#f1f4f8;}body{display:flex;justify-content:center;align-items:flex-start;overflow-x:hidden}.preview{width:${previewWidth}px;background:#fff}</style></head><body><div class="preview">${generatedCode}</div></body></html>`)
@@ -612,8 +625,9 @@ function App() {
 
   // 当前平台的模块宽度（店招统一 950/990）与通栏模块在 1920 原图上的可视窗口起点
   const activeModuleWidth = projectKind === 'sign' ? signWidthOf(platform) : PLATFORMS[platform].width
+  // 通用版没有固定模块窗口（整块按容器宽度自适应），所以不画可视区引导线。
   const moduleGuide =
-    codeFormat === 'layer'
+    codeFormat === 'layer' && !isGeneric
       ? {
           left:
             projectKind === 'sign'
@@ -623,7 +637,9 @@ function App() {
           label: `${PLATFORMS[platform].shortLabel}${projectKind === 'sign' ? '店招' : ''} ${activeModuleWidth} 可视区`,
         }
       : null
-  const outputLabel = `${PLATFORMS[platform].shortLabel} ${activeModuleWidth}${projectKind === 'sign' ? ' 店招' : ''} · ${codeFormat === 'layer' ? '全屏通栏' : '居中显示'}`
+  const outputLabel = isGeneric
+    ? `通用版 · 自适应宽度 · ${codeFormat === 'layer' ? '铺满容器' : '居中不超过原图宽'}`
+    : `${PLATFORMS[platform].shortLabel} ${activeModuleWidth}${projectKind === 'sign' ? ' 店招' : ''} · ${codeFormat === 'layer' ? '全屏通栏' : '居中显示'}`
 
   return (
     <div className="app-shell">
@@ -640,8 +656,12 @@ function App() {
                 type="button"
                 className={platform === item.id ? 'on' : ''}
                 aria-pressed={platform === item.id}
-                title={`${item.label}：页面模块宽 ${item.width}px${item.signWidth !== item.width ? `，店招宽 ${item.signWidth}px` : ''}`}
-                onClick={() => setPlatform(item.id)}
+                title={
+                  item.responsive
+                    ? `${item.label}：不绑定平台，输出自适应 HTML，可粘到任意网站`
+                    : `${item.label}：页面模块宽 ${item.width}px${item.signWidth !== item.width ? `，店招宽 ${item.signWidth}px` : ''}`
+                }
+                onClick={() => choosePlatform(item.id)}
               >
                 {item.label.split(' · ')[0]}
               </button>
@@ -870,24 +890,27 @@ function App() {
         }
       >
         <div className="export-options">
-          <div className="export-field">
-            <span className="export-field__label">项目类型</span>
-            <div className="seg" role="group" aria-label="项目类型">
-              <button type="button" className={projectKind === 'page' ? 'on' : ''} aria-pressed={projectKind === 'page'} onClick={() => setProjectKind('page')}>
-                页面装修<em>多图拼接</em>
-              </button>
-              <button type="button" className={projectKind === 'sign' ? 'on' : ''} aria-pressed={projectKind === 'sign'} onClick={() => setProjectKind('sign')}>
-                店招<em>单图 · 固定高度</em>
-              </button>
+          {/* 「店招」是淘宝页头的固定模块，通用版没有这个概念，直接不显示 */}
+          {!isGeneric && (
+            <div className="export-field">
+              <span className="export-field__label">项目类型</span>
+              <div className="seg" role="group" aria-label="项目类型">
+                <button type="button" className={projectKind === 'page' ? 'on' : ''} aria-pressed={projectKind === 'page'} onClick={() => setProjectKind('page')}>
+                  页面装修<em>多图拼接</em>
+                </button>
+                <button type="button" className={projectKind === 'sign' ? 'on' : ''} aria-pressed={projectKind === 'sign'} onClick={() => setProjectKind('sign')}>
+                  店招<em>单图 · 固定高度</em>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="export-field">
             <span className="export-field__label">平台</span>
             <div className="seg" role="group" aria-label="平台">
               {PLATFORM_LIST.map((item) => (
-                <button key={item.id} type="button" className={platform === item.id ? 'on' : ''} aria-pressed={platform === item.id} onClick={() => setPlatform(item.id)}>
-                  {item.label.split(' · ')[0]}<em>{item.width} px 模块</em>
+                <button key={item.id} type="button" className={platform === item.id ? 'on' : ''} aria-pressed={platform === item.id} onClick={() => choosePlatform(item.id)}>
+                  {item.label.split(' · ')[0]}<em>{item.responsive ? '自适应宽度' : `${item.width} px 模块`}</em>
                 </button>
               ))}
             </div>
@@ -920,12 +943,18 @@ function App() {
         <p className="export-note">
           {projectKind === 'sign'
             ? '店招为全局唯一模块，只导出第一张店招图；其余图片不会出现在代码里（切回页面装修仍保留）。'
-            : `平台按你的店铺类型选：${PLATFORM_LIST.map((item) =>
-                `${item.shortLabel} ${item.width}`,
-              ).join('、')}，对应后台那个模块的宽度，选错图会左右偏。基础版店招仍是 950 宽，不受 750 影响。`}
+            : isGeneric
+              ? '通用版不绑定任何平台：整块按所在容器宽度自适应，热点用百分比定位，图片缩放时热点跟着缩放，手机上也不会错位。全部内联样式，不需要额外 CSS 或 JS，可直接粘进自建站、WordPress、Shopify 等任意支持 HTML 的地方。'
+              : `平台按你的店铺类型选：${PLATFORM_LIST.filter((item) => !item.responsive)
+                  .map((item) => `${item.shortLabel} ${item.width}`)
+                  .join('、')}，对应后台那个模块的宽度，选错图会左右偏。基础版店招仍是 950 宽，不受 750 影响。不在淘宝天猫用就选「通用版」。`}
         </p>
         <p className="export-hint">
-          {CODE_FORMATS.find((item) => item.id === codeFormat)?.hint}
+          {isGeneric
+            ? codeFormat === 'layer'
+              ? '铺满：整块宽度 100%，跟着所在容器走，放进通栏区域就是整屏通栏。'
+              : `居中：最宽不超过原图宽（${images[0]?.width || CANVAS_WIDTH} px），窗口更宽时两侧留白，更窄时整块等比缩小。`
+            : CODE_FORMATS.find((item) => item.id === codeFormat)?.hint}
           {projectKind === 'sign' && ' 店招代码粘到「店铺招牌 → 自定义招牌 → 源码」。'}
         </p>
         <textarea className="generated-code" rows={projectKind === 'sign' ? 12 : 17} readOnly value={generatedCode} onFocus={(event) => event.currentTarget.select()} />

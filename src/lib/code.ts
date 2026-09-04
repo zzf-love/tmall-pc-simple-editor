@@ -107,11 +107,45 @@ function imageMapPage(images: ImageAsset[], platform: PlatformId) {
   return `<div class="hotzone-studio" data-title="${title}" style="width:${width}px;margin:0 auto;line-height:0;font-size:0;">${blocks}</div>`
 }
 
+// ── 通用版：自适应百分比热区 ───────────────────────────────────────
+// 不依赖任何平台的模块宽度与系统类名，也不用 usemap（usemap 的 coords 是死像素，
+// 图片一缩放热点就错位）。图片 width:100%，热点用百分比定位，整块跟着容器宽度
+// 等比缩放，手机上也不会错位。全部内联样式，不需要 <style>、不需要 JS，
+// 可以直接粘进任意网站或 CMS 的 HTML 区域。
+
+/** 百分比保留 4 位小数：1920px 上的 1px 约 0.052%，足够精确又不会写出长串浮点 */
+const pct = (value: number) => `${Number(value.toFixed(4))}%`
+
+function responsiveBlock(image: ImageAsset, imageIndex: number) {
+  const hotspots = image.hotspots
+    .map((hotspot, index) => {
+      const left = pct((hotspot.x / image.width) * 100)
+      const top = pct((hotspot.y / image.height) * 100)
+      const width = pct((hotspot.width / image.width) * 100)
+      const height = pct((hotspot.height / image.height) * 100)
+      const label = hotspot.label || `热点 ${index + 1}`
+      return `<a class="hotzone-area" data-w="area" href="${escapeAttr(hotspot.href || '#')}" target="${hotspot.target}" rel="noopener" aria-label="${escapeAttr(label)}" style="position:absolute;left:${left};top:${top};width:${width};height:${height};display:block;z-index:${index + 2};"></a>`
+    })
+    .join('')
+  // width/height 属性写原图像素：既让浏览器提前知道宽高比（避免加载时抖动），
+  // 也让「导入代码」能按原图像素空间还原热点。
+  return `<div class="hotzone-item" style="position:relative;display:block;line-height:0;font-size:0;"><img src="${escapeAttr(image.url)}" width="${image.width}" height="${image.height}"${originalSizeAttrs(image)} alt="" style="display:block;width:100%;height:auto;border:0;" />${hotspots}</div>`
+}
+
+function responsivePage(images: ImageAsset[], fullWidth: boolean) {
+  const naturalWidth = images[0]?.width || CANVAS_WIDTH
+  // 全屏通栏：铺满所在容器；居中显示：最宽不超过原图宽，居中留白。
+  const outer = fullWidth ? 'width:100%;' : `max-width:${naturalWidth}px;margin:0 auto;`
+  const blocks = images.map((image, index) => responsiveBlock(image, index)).join('')
+  return `<div class="hotzone-studio" data-title="${PLATFORMS.generic.title}" style="${outer}line-height:0;font-size:0;">${blocks}</div>`
+}
+
 // ── 对外入口 ───────────────────────────────────────────────────────
 
 export function generateStoreCode(images: ImageAsset[], options: ExportOptions = {}) {
   const platform = options.platform ?? 'tmall990'
   const format = options.format ?? 'layer'
+  if (PLATFORMS[platform].responsive) return responsivePage(images, format === 'layer')
   return format === 'imagemap' ? imageMapPage(images, platform) : layerPage(images, platform)
 }
 
@@ -129,6 +163,10 @@ export function generateSignCode(
   const format = options.format ?? 'imagemap'
   const width = signWidthOf(platform)
   if (!image) return ''
+
+  // 通用版没有「店招」这个概念（那是淘宝页头的固定模块），按普通自适应块输出。
+  // UI 上通用版也不显示店招选项，这里只是防御性兜底。
+  if (PLATFORMS[platform].responsive) return responsivePage([image], format === 'layer')
 
   if (format === 'layer') {
     // 通栏店招与页面通栏是同一套突破结构，只是高度固定为店招高度。
@@ -156,6 +194,22 @@ const px = (style: CSSStyleDeclaration | undefined | null, property: keyof CSSSt
   return Number.isFinite(value) ? value : 0
 }
 
+/**
+ * 通用版的热点写的是百分比（`left:31.25%`），按给定基准换算回像素；
+ * 写死像素的照常返回。base 为 0 时无法换算，退回原始数值。
+ */
+const lengthPx = (
+  style: CSSStyleDeclaration | undefined | null,
+  property: keyof CSSStyleDeclaration,
+  base: number,
+) => {
+  if (!style) return 0
+  const raw = String(style[property] || '').trim()
+  const value = Number.parseFloat(raw)
+  if (!Number.isFinite(value)) return 0
+  return raw.endsWith('%') && base ? (value / 100) * base : value
+}
+
 function getBackgroundUrl(element: HTMLElement) {
   const style = element.style
   const value = style.backgroundImage || style.background
@@ -169,18 +223,21 @@ function hotspotFromElement(
   scale = 1,
   offsetX = 0,
   offsetY = 0,
+  base: { width: number; height: number } = { width: 0, height: 0 },
 ): Hotspot | null {
   const anchor = element.matches('a') ? (element as HTMLAnchorElement) : element.querySelector('a')
   const source = element
-  const width = px(source.style, 'width') || px(anchor?.style, 'width')
-  const height = px(source.style, 'height') || px(anchor?.style, 'height')
+  // 通用版热点是百分比定位，按原图尺寸换算回像素；平台版是死像素，原样通过。
+  const width = lengthPx(source.style, 'width', base.width) || lengthPx(anchor?.style, 'width', base.width)
+  const height =
+    lengthPx(source.style, 'height', base.height) || lengthPx(anchor?.style, 'height', base.height)
   if (!width || !height) return null
 
   return {
     id: uid('hotspot'),
     label: `热点 ${String(index + 1).padStart(2, '0')}`,
-    x: Math.round((px(source.style, 'left') - offsetX) / scale),
-    y: Math.round((px(source.style, 'top') - offsetY) / scale),
+    x: Math.round((lengthPx(source.style, 'left', base.width) - offsetX) / scale),
+    y: Math.round((lengthPx(source.style, 'top', base.height) - offsetY) / scale),
     width: Math.round(width / scale),
     height: Math.round(height / scale),
     href: anchor?.getAttribute('href') || '#',
@@ -255,7 +312,10 @@ function buildImportedAsset(
   const offsetY = isBackground ? ((record.declaredH || origH) - origH) / 2 : 0
   const areaHotspots = record.areas.map((area, areaIndex) => hotspotFromArea(area, areaIndex, scale))
   const boxHotspots = record.boxes.map((element, boxIndex) =>
-    hotspotFromElement(element, record.areas.length + boxIndex, scale, offsetX, offsetY),
+    hotspotFromElement(element, record.areas.length + boxIndex, scale, offsetX, offsetY, {
+      width: origW,
+      height: origH,
+    }),
   )
   const hotspots = [...areaHotspots, ...boxHotspots].filter(
     (hotspot): hotspot is Hotspot => Boolean(hotspot),

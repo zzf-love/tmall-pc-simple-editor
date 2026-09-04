@@ -245,6 +245,62 @@ describe('sign code', () => {
   })
 })
 
+describe('generic platform (通用版)', () => {
+  it('emits a self-contained responsive block with percentage hotspots', () => {
+    const code = generateStoreCode([image], { platform: 'generic', format: 'layer' })
+    // 图片自适应容器宽度
+    expect(code).toContain('width:100%;height:auto')
+    // 热点按百分比定位：x 880/1920 = 45.8333%，宽 743/1920 = 38.6979%
+    expect(code).toContain('left:45.8333%')
+    expect(code).toContain('width:38.6979%')
+    // y 66/649 = 10.1695%，高 573/649 = 88.2897%
+    expect(code).toContain('top:10.1695%')
+    expect(code).toContain('height:88.2897%')
+    // 不带任何淘宝/天猫平台痕迹
+    expect(code).not.toContain('sn-simple-logo')
+    expect(code).not.toContain('footer-more-trigger')
+    expect(code).not.toContain('jg_tools_code')
+    expect(code).not.toContain('usemap')
+    // 纯内联样式，不依赖外部 CSS/JS
+    expect(code).not.toContain('<style')
+    expect(code).not.toContain('<script')
+    // 原图像素写进 width/height 与 data-ow/data-oh，供浏览器算宽高比与再次导入
+    expect(code).toContain('width="1920" height="649"')
+    expect(code).toContain('data-ow="1920" data-oh="649"')
+  })
+
+  it('centred mode caps at the natural width, full-bleed mode fills the container', () => {
+    const centred = generateStoreCode([image], { platform: 'generic', format: 'imagemap' })
+    expect(centred).toContain('max-width:1920px;margin:0 auto;')
+
+    const full = generateStoreCode([image], { platform: 'generic', format: 'layer' })
+    expect(full).toContain('width:100%;line-height:0')
+    expect(full).not.toContain('max-width')
+  })
+
+  it('round-trips its own output back into the same pixel coordinates', () => {
+    const code = generateStoreCode([image], { platform: 'generic', format: 'layer' })
+    const imported = importStoreCode(code)
+    expect(imported).toHaveLength(1)
+    expect(imported[0]).toMatchObject({ width: 1920, height: 649 })
+    // 百分比坐标换算回原图像素，允许 1px 的四舍五入误差
+    const hotspot = imported[0].hotspots[0]
+    expect(hotspot.x).toBeCloseTo(880, -0.5)
+    expect(hotspot.y).toBeCloseTo(66, -0.5)
+    expect(hotspot.width).toBeCloseTo(743, -0.5)
+    expect(hotspot.height).toBeCloseTo(573, -0.5)
+    expect(hotspot.href).toBe('https://detail.tmall.com/item.htm?id=1&skuId=2')
+  })
+
+  it('stacks multiple images with no gap', () => {
+    const second: ImageAsset = { ...image, id: 'image-2', url: 'https://img.example.com/b.jpg', hotspots: [] }
+    const code = generateStoreCode([image, second], { platform: 'generic', format: 'layer' })
+    expect(code.match(/<img /g)).toHaveLength(2)
+    // 外层与每块都压掉行内元素间隙
+    expect(code.match(/line-height:0;font-size:0/g)?.length).toBeGreaterThanOrEqual(3)
+  })
+})
+
 describe('layer container height that differs from the image natural height', () => {
   // 用户线上遇到的形态：容器写 769px，但原图其实是 1920x700。
   // 沿用容器高度会让导出的 center center 背景上下各留白 (769-700)/2 = 34.5px。
